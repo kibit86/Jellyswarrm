@@ -68,7 +68,20 @@ with sync_playwright() as pw:
         check("nothing is connected yet, so no Administer button", page.locator('a:has-text("Administer")').count() == 0)
         setup = page.locator('a:has-text("Set up")')
         check("only the brand-new server is offered 'Set up'", setup.count() == 1 and "/backend/2/web/" in setup.first.get_attribute("href"), str(setup.count()))
+        opener = page.locator('a:has-text("Open")')
+        check("the server that is already set up is offered 'Open'", opener.count() == 1 and "/backend/1/web/" in opener.first.get_attribute("href"), str(opener.count()))
     scenario(s01_fresh_login_and_navigation)
+
+    def s01a_open_a_server_before_mapping_any_account():
+        pg = ctx.new_page()
+        pg.goto(f"{P}/ui/backend/1/web/", wait_until="networkidle")
+        pg.wait_for_selector("#txtManualName", timeout=30000)
+        check("with no mapped account the server's own login page is shown", "Please sign in" in pg.inner_text("body"))
+        pg.fill("#txtManualName", "owner"); pg.fill("#txtManualPassword", "owner-pw-A"); pg.click('button[type="submit"]')
+        who = me(pg); pg.screenshot(path=f"{OUT}/01a-manual-login-A.png")
+        check("signing in there with the server's own account works", who["name"] == "owner" and who["admin"] and who["address"].endswith("/ui/backend/1"), str(who))
+        pg.close()
+    scenario(s01a_open_a_server_before_mapping_any_account)
 
     def s01b_first_setup_of_a_new_server_through_the_proxy():
         with ctx.expect_page() as popup:
@@ -95,6 +108,9 @@ with sync_playwright() as pw:
               [x for x in steps if x.startswith("/wizard")] == ["/wizard/start", "/wizard/user", "/wizard/library", "/wizard/settings", "/wizard/remoteaccess", "/wizard/finish"], str(steps))
         done = call(B, "GET", "/System/Info/Public")[1]
         check("the server is now set up", done["StartupWizardCompleted"] is True and done["ServerName"] == "Server B (new)", str(done.get("ServerName")))
+        # Well past any short-lived state: the page must keep working after the wizard.
+        pg.wait_for_timeout(12000)
+        pg.reload(wait_until="networkidle")
         pg.wait_for_selector("#txtManualName", timeout=30000)
         pg.screenshot(path=f"{OUT}/01c-after-wizard-login.png")
         pg.fill("#txtManualName", "boss"); pg.fill("#txtManualPassword", "boss-pw-B"); pg.click('button[type="submit"]')

@@ -108,12 +108,20 @@
                 </td>
                 <td>
                     <div class="server-actions">
+                    {% if is_admin %}
                     {% if setup_ids.contains(&server.id.as_i64()) %}
                     <a role="button" class="server-action"
                         href="/{{ ui_route }}/backend/{{ server.id }}/web/" target="_blank" rel="noopener"
                         title="{{ server.name }} has never been set up: run its first-time setup through the proxy and create its first account">
                         <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i> Set up
                     </a>
+                    {% else %}
+                    <a role="button" class="outline server-action"
+                        href="/{{ ui_route }}/backend/{{ server.id }}/web/" target="_blank" rel="noopener"
+                        title="Open {{ server.name }}'s own web client through the proxy and sign in there">
+                        <i class="fas fa-up-right-from-square" aria-hidden="true"></i> Open
+                    </a>
+                    {% endif %}
                     {% endif %}
                     <button type="button"
                         class="outline server-action connect-button"

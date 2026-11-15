@@ -28,8 +28,11 @@ pub(crate) struct UserServerListTemplate {
     pub(crate) unmapped_servers: Vec<Server>,
     /// IDs of the listed servers where the user is an administrator.
     pub(crate) administrator_ids: Vec<i64>,
-    /// IDs of the listed (not yet connected) servers that were never set up. Only the
-    /// proxy administrator is offered them: their first-run wizard opens through the proxy.
+    /// The proxy administrator may open a server that has no mapped account yet, to sign in
+    /// on its own page.
+    pub(crate) is_admin: bool,
+    /// IDs of the listed (not yet connected) servers that were never set up: their
+    /// first-run wizard opens through the proxy ("Set up" instead of "Open").
     pub(crate) setup_ids: Vec<i64>,
     pub(crate) ui_route: String,
 }
@@ -252,6 +255,7 @@ pub(crate) async fn get_user_servers(
         servers: mapped_servers,
         unmapped_servers,
         administrator_ids,
+        is_admin: user.role == crate::ui::auth::UserRole::Admin,
         setup_ids,
         ui_route: state.paths.ui_route(),
     };

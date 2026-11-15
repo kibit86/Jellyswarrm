@@ -168,7 +168,7 @@ fn json_for_script<T: serde::Serialize>(value: &T) -> String {
 /// apart from the proxy's own client (and from other backends), and hold the
 /// signed-in session for this backend.
 fn panel_script(server: &Server, mount: &str, entry: &Entry) -> String {
-    // No session to hand over during a first setup: the wizard creates the account.
+    // No session to hand over without a mapped account: the page asks, or the wizard creates one.
     let seed = match entry {
         Entry::Account(identity) => serde_json::json!({
             "Id": identity.backend_server_id,
@@ -177,7 +177,7 @@ fn panel_script(server: &Server, mount: &str, entry: &Entry) -> String {
             "UserId": identity.user_id,
             "AccessToken": identity.token,
         }),
-        Entry::FirstSetup => serde_json::Value::Null,
+        Entry::Manual => serde_json::Value::Null,
     };
     PANEL_SCRIPT
         .replace("%PREFIX%", &json_for_script(&format!("jsw-backend-{}:", server.id)))
@@ -209,15 +209,19 @@ fn has_dot_segments(rest: &str) -> bool {
 enum Entry {
     /// Signed in with the account they mapped there, which administers it.
     Account(std::sync::Arc<PanelIdentity>),
-    /// The server has never been set up (its first-run wizard is open) and the user
-    /// is the proxy administrator: there is no account yet, so the wizard runs
-    /// through the pass-through and creates the first one.
-    FirstSetup,
+    /// The proxy administrator opening a server they have not connected an account to
+    /// (a brand-new one needs its first-run wizard; any other, its own login page).
+    /// Nothing is signed in for them: the server's page asks, and the server decides
+    /// what the account they type may do.
+    Manual,
 }
 
-/// Let the user in only if the account they mapped on `server_id` is an
-/// administrator there; or, for the proxy administrator, if the server is still
-/// waiting for its first setup. Returns the server and how they got in.
+/// Who may open `server_id`, and how:
+/// - a user with a mapped account: only if that account administers the server, signed
+///   in automatically;
+/// - the proxy administrator, on a server with no mapped account yet: anyway, signing in
+///   on the server's own page (this is how a new server gets its first account);
+/// - everyone else: no.
 async fn authorize(
     state: &ManagementState,
     user: &crate::ui::auth::UiUser,
@@ -233,10 +237,9 @@ async fn authorize(
         Ok(identity) if identity.is_administrator => Ok((server, Entry::Account(identity))),
         Ok(_) => Err(StatusCode::FORBIDDEN),
         Err(crate::ui::backend_identity::IdentityError::NotConnected)
-            if user.role == crate::ui::auth::UserRole::Admin
-                && state.panel_identities.setup_pending(state, &server).await =>
+            if user.role == crate::ui::auth::UserRole::Admin =>
         {
-            Ok((server, Entry::FirstSetup))
+            Ok((server, Entry::Manual))
         }
         Err(error) => Err(StatusCode::from(error)),
     }
