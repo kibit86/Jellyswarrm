@@ -19,7 +19,7 @@ use axum::{
         },
         Path, Request, State,
     },
-    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
 use futures_util::{SinkExt, StreamExt};
@@ -450,6 +450,7 @@ async fn relay_websocket(client: WebSocket, url: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderName;
 
     #[test]
     fn location_is_pulled_back_into_the_mount() {

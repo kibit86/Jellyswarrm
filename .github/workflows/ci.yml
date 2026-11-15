@@ -1,10 +1,12 @@
 name: CI
 
+# Runs on pull requests, and is called by docker.yml on every push to main (so the
+# image is only published when this is green, and it runs once, not twice).
+# It deliberately has no `push` trigger of its own.
 on:
-  push:
-    branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_call:
   workflow_dispatch:
 
 permissions:

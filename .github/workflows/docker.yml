@@ -1,9 +1,15 @@
 name: Docker Build
 
+# Flow (trunk + tags):
+#  - pull request to main : CI (ci.yml, runs by itself) + image build, nothing published.
+#  - push to main         : CI must pass, then publishes the snapshot `edge` + `sha-<commit>`.
+#                           If the version in Cargo.toml has no tag yet, it is a RELEASE: also
+#                           publishes X.Y.Z, X.Y, X and latest, then creates the tag vX.Y.Z and
+#                           the GitHub Release on that very commit.
+# Tags are never pushed by hand and never trigger anything: they only come out of main.
 on:
   push:
-    branches: [ main, fix/204-merged-media-titles-and-search ]
-    tags: [ 'v*' ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -11,8 +17,64 @@ on:
 env:
   REGISTRY: ghcr.io
 
+# One release run at a time per branch: two pushes in a row must not race for the same tag.
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  ci:
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      major: ${{ steps.v.outputs.major }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+    - name: Checkout (all tags)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Decide whether this is a release
+      id: v
+      run: |
+        version=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])")
+        if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::Version '$version' in Cargo.toml is not X.Y.Z"; exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "major=${version%%.*}" >> "$GITHUB_OUTPUT"
+        echo "minor=$(echo "$version" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+
+        release=false
+        if [ "${{ github.event_name }}" = "push" ]; then
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "Tag v$version already exists: snapshot only."
+          else
+            latest=$(git tag --list 'v[0-9]*' | sed 's/^v//' | sort -V | tail -n1)
+            highest=$(printf '%s\n%s\n' "${latest:-0.0.0}" "$version" | sort -V | tail -n1)
+            if [ "$highest" != "$version" ]; then
+              echo "::error::Version $version is lower than the latest tag v$latest: fix Cargo.toml"; exit 1
+            fi
+            echo "New version $version (latest tag: v${latest:-none}): this is a RELEASE."
+            release=true
+          fi
+        fi
+        echo "release=$release" >> "$GITHUB_OUTPUT"
+
   build-and-push:
+    needs: [ci, version]
+    # `ci` is skipped on pull requests (ci.yml runs by itself there); on push it must be green.
+    if: ${{ !cancelled() && needs.version.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
     strategy:
       matrix:
         include:
@@ -36,7 +98,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Log in to Container Registry
-      if: github.event_name != 'pull_request'
+      if: github.event_name == 'push'
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
@@ -59,16 +121,15 @@ jobs:
         flavor: |
           suffix=-${{ steps.platform.outputs.suffix }}
         tags: |
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-          type=raw,value=main,enable={{is_default_branch}}
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' }}
-          type=sha,prefix=beta-,enable=${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' }}
-          type=sha,enable=${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          type=raw,value=edge,enable=${{ github.event_name == 'push' }}
+          type=sha,enable=${{ github.event_name == 'push' }}
+          type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.major }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' }}
 
     - name: Build and push Docker image
-      if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' || startsWith(github.ref, 'refs/tags/v'))
+      if: github.event_name == 'push'
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -86,8 +147,8 @@ jobs:
         build-args: |
           BUILDKIT_INLINE_CACHE=1
 
-    - name: Build Docker image (PR)
-      if: github.event_name == 'pull_request'
+    - name: Build Docker image (nothing is published)
+      if: github.event_name != 'push'
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -104,11 +165,11 @@ jobs:
           BUILDKIT_INLINE_CACHE=1
 
   create-manifest:
-    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' || startsWith(github.ref, 'refs/tags/v'))
-    needs: build-and-push
+    if: github.event_name == 'push'
+    needs: [version, build-and-push]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # creates the tag and the GitHub Release on a release
       packages: write
 
     steps:
@@ -129,13 +190,12 @@ jobs:
       with:
         images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
         tags: |
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-          type=raw,value=main,enable={{is_default_branch}}
-          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' }}
-          type=sha,prefix=beta-,enable=${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/fix/204-merged-media-titles-and-search' }}
-          type=sha,enable=${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          type=raw,value=edge
+          type=sha
+          type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.major }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' }}
 
     - name: Create and push multi-platform manifest
       run: |
@@ -146,3 +206,15 @@ jobs:
             --amend ${TAG}-linux-arm64
           docker manifest push $TAG
         done
+
+    # Last step on purpose: the tag only exists once the images are all published.
+    - name: Tag the release and create the GitHub Release
+      if: needs.version.outputs.release == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "v${{ needs.version.outputs.version }}" \
+          --repo "${{ github.repository }}" \
+          --target "${{ github.sha }}" \
+          --title "v${{ needs.version.outputs.version }}" \
+          --generate-notes
