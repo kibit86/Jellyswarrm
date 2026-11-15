@@ -66,7 +66,53 @@ with sync_playwright() as pw:
         check("the admin sees 'My servers' and the admin tabs", all(t in text for t in ("My servers", "Servers", "Users", "Settings", "Profile")))
         check("both fresh servers are offered to connect", "Server A" in text and "Server B" in text and "Available Servers" in text)
         check("nothing is connected yet, so no Administer button", page.locator('a:has-text("Administer")').count() == 0)
+        setup = page.locator('a:has-text("Set up")')
+        check("only the brand-new server is offered 'Set up'", setup.count() == 1 and "/backend/2/web/" in setup.first.get_attribute("href"), str(setup.count()))
     scenario(s01_fresh_login_and_navigation)
+
+    def s01b_first_setup_of_a_new_server_through_the_proxy():
+        with ctx.expect_page() as popup:
+            page.locator('a:has-text("Set up")').first.click()
+        pg = popup.value
+        pg.wait_for_load_state("networkidle", timeout=60000); pg.wait_for_timeout(3000)
+        pg.screenshot(path=f"{OUT}/01b-wizard-start.png")
+        check("the Jellyfin first-run wizard opens through the proxy", "wizard/start" in pg.url and "Welcome to Jellyfin" in pg.inner_text("body"), pg.url)
+        steps = []
+        for _ in range(8):
+            where = pg.url.split("#")[-1]
+            steps.append(where)
+            submit = pg.locator("button.button-submit:visible")
+            if "wizard/start" in where:
+                pg.fill("#txtServerName", "Server B (new)")
+            elif pg.locator("#txtUsername:visible").count():
+                pg.fill("#txtUsername", "boss"); pg.fill("#txtManualPassword", "boss-pw-B"); pg.fill("#txtPasswordConfirm", "boss-pw-B")
+            if not submit.count():
+                break
+            submit.first.click(); pg.wait_for_timeout(2500)
+            if "wizard" not in pg.url:
+                break
+        check("every wizard step runs through the proxy, creating the first user",
+              [x for x in steps if x.startswith("/wizard")] == ["/wizard/start", "/wizard/user", "/wizard/library", "/wizard/settings", "/wizard/remoteaccess", "/wizard/finish"], str(steps))
+        done = call(B, "GET", "/System/Info/Public")[1]
+        check("the server is now set up", done["StartupWizardCompleted"] is True and done["ServerName"] == "Server B (new)", str(done.get("ServerName")))
+        pg.wait_for_selector("#txtManualName", timeout=30000)
+        pg.screenshot(path=f"{OUT}/01c-after-wizard-login.png")
+        pg.fill("#txtManualName", "boss"); pg.fill("#txtManualPassword", "boss-pw-B"); pg.click('button[type="submit"]')
+        who = me(pg)
+        check("the account the wizard created signs in on the same page", who["name"] == "boss" and who["admin"] and who["address"].endswith("/ui/backend/2"), str(who))
+        pg.close()
+        # B also needs an ordinary account and a library for the scenarios that follow.
+        tok = call(B, "POST", "/Users/AuthenticateByName", {"Username": "boss", "Pw": "boss-pw-B"}, device_id="setupcheck")[1]["AccessToken"]
+        call(B, "POST", "/Users/New", {"Name": "guest", "Password": "guest-pw-B"}, token=tok, device_id="setupcheck")
+        call(B, "POST", "/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=true", {"LibraryOptions": {"PathInfos": [{"Path": "/media"}]}}, token=tok, device_id="setupcheck")
+        import time
+        for _ in range(30):
+            if len(call(B, "GET", "/Items?Recursive=true&IncludeItemTypes=Movie", token=tok, device_id="setupcheck")[1]["Items"]) >= 2:
+                break
+            call(B, "POST", "/Library/Refresh", token=tok, device_id="setupcheck"); time.sleep(3)
+        page.goto(f"{P}/ui", wait_until="networkidle"); page.wait_for_timeout(1500)
+        check("once set up, the server is no longer offered 'Set up' (at once)", page.locator('a:has-text("Set up")').count() == 0)
+    scenario(s01b_first_setup_of_a_new_server_through_the_proxy)
 
     def s02_federation_is_gone():
         page.goto(f"{P}/ui", wait_until="networkidle")

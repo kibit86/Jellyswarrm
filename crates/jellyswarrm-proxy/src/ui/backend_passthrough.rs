@@ -282,6 +282,8 @@ pub(crate) async fn forward(
     let url = upstream_url(server.url.as_str(), &rest, query.as_deref(), false);
     let (parts, body) = request.into_parts();
     let is_start_page = is_web_entry(&parts.method, &rest);
+    let completes_setup =
+        parts.method == Method::POST && rest.trim_matches('/').eq_ignore_ascii_case("Startup/Complete");
     let mut headers = HeaderMap::new();
     for (name, value) in &parts.headers {
         if is_dropped_request_header(name) || (is_start_page && is_entry_negotiation_header(name)) {
@@ -307,6 +309,9 @@ pub(crate) async fn forward(
         }
     };
 
+    if completes_setup && response.status().is_success() {
+        state.panel_identities.forget_setup(&server).await;
+    }
     let rewrite_page = is_start_page
         && response.status() == StatusCode::OK
         && response

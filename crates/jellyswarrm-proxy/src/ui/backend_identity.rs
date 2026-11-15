@@ -79,6 +79,11 @@ impl PanelIdentities {
         }
     }
 
+    /// The server's wizard was just completed: stop treating it as a first setup.
+    pub(crate) async fn forget_setup(&self, server: &Server) {
+        self.setup.invalidate(&server.id.as_i64()).await;
+    }
+
     /// Whether the server has never been set up: its first-run wizard is not
     /// completed, so it has no accounts yet and nothing a mapping could point to.
     /// An unreachable or unreadable server is not "waiting for setup".

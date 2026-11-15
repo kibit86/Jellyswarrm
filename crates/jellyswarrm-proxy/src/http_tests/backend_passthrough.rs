@@ -651,3 +651,40 @@ async fn only_the_administrator_is_offered_set_up_and_only_for_a_new_server() {
     let for_user = page(other).await;
     assert!(!for_user.contains("Set up"), "an ordinary user is not offered it");
 }
+
+#[tokio::test]
+async fn completing_the_wizard_ends_the_first_setup_access_at_once() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    // The first probe finds the wizard open; every later one finds it completed.
+    Mock::given(method("GET"))
+        .and(path("/System/Info/Public"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"StartupWizardCompleted": false})))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(&f.upstreams[1])
+        .await;
+    wizard_state(&f, 1, true).await;
+    mount_start_page(&f, 1).await;
+    Mock::given(method("POST"))
+        .and(path("/Startup/Complete"))
+        .respond_with(ResponseTemplate::new(204))
+        .mount(&f.upstreams[1])
+        .await;
+    let cookie = administrator_without_accounts(&f).await;
+    let id = server_id(&f, 1).await;
+
+    let open = plain_client().get(backend(&f, id, "web/")).header("cookie", &cookie).send().await.unwrap();
+    assert_eq!(open.status(), StatusCode::OK, "the wizard is open");
+    let finished = plain_client()
+        .post(backend(&f, id, "Startup/Complete"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(finished.status(), StatusCode::NO_CONTENT);
+
+    // Not "within ten seconds": immediately.
+    let after = plain_client().get(backend(&f, id, "web/")).header("cookie", &cookie).send().await.unwrap();
+    assert_eq!(after.status(), StatusCode::FORBIDDEN);
+}
