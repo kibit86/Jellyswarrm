@@ -164,7 +164,7 @@ mod tests {
         let config = Arc::new(RwLock::new(AppConfig {
             server_id: "abc123".into(),
             server_name: "Proxy".into(),
-            public_address: "http://192.168.1.1:8097".into(),
+            public_address: "http://192.0.2.10:8097".into(),
             autodiscovery,
             ..AppConfig::default()
         }));
@@ -205,9 +205,9 @@ mod tests {
 
     #[test]
     fn answer_has_jellyfins_field_names_and_a_full_url() {
-        let reply = discovery_response("http://192.168.1.1:8097", "abc123", "Proxy");
+        let reply = discovery_response("http://192.0.2.10:8097", "abc123", "Proxy");
         let value: serde_json::Value = serde_json::from_slice(&reply).unwrap();
-        assert_eq!(value["Address"], "http://192.168.1.1:8097");
+        assert_eq!(value["Address"], "http://192.0.2.10:8097");
         assert_eq!(value["Id"], "abc123");
         assert_eq!(value["Name"], "Proxy");
         assert!(value["EndpointAddress"].is_null());
@@ -227,7 +227,7 @@ mod tests {
         let reply = ask(port, "who is JellyfinServer?").await.expect("an answer");
         let value: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(value["Id"], "abc123");
-        assert_eq!(value["Address"], "http://192.168.1.1:8097");
+        assert_eq!(value["Address"], "http://192.0.2.10:8097");
         assert!(ask(port, "hello").await.is_none());
         task.abort();
     }

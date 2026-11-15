@@ -294,17 +294,17 @@ mod tests {
     fn location_is_pulled_back_into_the_mount() {
         let mount = mount("ui", ServerId::new(3));
         assert_eq!(mount, "/ui/backend/3");
-        let base = "http://192.168.1.1:8096";
+        let base = "http://192.0.2.10:8096";
         assert_eq!(
             rewrite_location("/web/index.html", &mount, base),
             "/ui/backend/3/web/index.html"
         );
         assert_eq!(
-            rewrite_location("http://192.168.1.1:8096/web/", &mount, base),
+            rewrite_location("http://192.0.2.10:8096/web/", &mount, base),
             "/ui/backend/3/web/"
         );
         assert_eq!(
-            rewrite_location("http://192.168.1.1:8096", &mount, base),
+            rewrite_location("http://192.0.2.10:8096", &mount, base),
             "/ui/backend/3"
         );
         // Not the backend and not a local path: left alone.
@@ -315,8 +315,8 @@ mod tests {
         assert_eq!(rewrite_location("//evil.example/x", &mount, base), "//evil.example/x");
         // A host that merely starts like the backend's is not the backend.
         assert_eq!(
-            rewrite_location("http://192.168.1.1:80961/x", &mount, base),
-            "http://192.168.1.1:80961/x"
+            rewrite_location("http://192.0.2.10:80961/x", &mount, base),
+            "http://192.0.2.10:80961/x"
         );
     }
 
