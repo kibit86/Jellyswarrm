@@ -263,7 +263,7 @@ impl AdminRights {
             .header(
                 reqwest::header::AUTHORIZATION,
                 format!(
-                    "MediaBrowser Client=\"Jellyswarrm Proxy\", Device=\"Server\", DeviceId=\"jellyswarrm-proxy\", Version=\"{}\", Token=\"{}\"",
+                    "MediaBrowser Client=\"JellyProxy-NG\", Device=\"Server\", DeviceId=\"jellyswarrm-proxy\", Version=\"{}\", Token=\"{}\"",
                     env!("CARGO_PKG_VERSION"),
                     session.jellyfin_token
                 ),

@@ -7,8 +7,8 @@ resolver = "2"
 authors = ["lukaskreussel@gmail.com"]
 edition = "2021"
 rust-version = "1.99"
-repository = "https://github.com/LLukas22/Jellyswarrm"
-version = "1.1.0"
+repository = "https://github.com/kibit86/jellyproxy-ng"
+version = "1.2.0"
 
 [workspace.dependencies]
 

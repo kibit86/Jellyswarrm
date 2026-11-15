@@ -157,7 +157,7 @@ impl PanelIdentities {
             .map_err(storage)?
             .ok_or(IdentityError::NotConnected)?;
         let client_info = jellyfin_api::ClientInfo {
-            device: "Jellyswarrm panel".to_string(),
+            device: "JellyProxy-NG panel".to_string(),
             // One device per user and server: the backend reuses its session
             // instead of piling up a new one at every login.
             device_id: format!("jellyswarrm-panel-{}-{}", server.id, user.id),

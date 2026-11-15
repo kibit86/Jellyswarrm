@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Jellyswarrm{% endblock %}
+{% block title %}Dashboard - JellyProxy-NG{% endblock %}
 
 {% block body %}
     <!-- Navigation -->
@@ -9,8 +9,8 @@
             <ul class="dashboard-brand-list">
                 <li>
                     <a href="/{{ ui_route }}" class="dashboard-brand">
-                        <img src="/{{ ui_route }}/resources/icon.svg" alt="Jellyswarrm Logo">
-                        <strong>Jellyswarrm</strong>
+                        <img src="/{{ ui_route }}/resources/icon.svg" alt="JellyProxy-NG Logo">
+                        <strong>JellyProxy-NG</strong>
                     </a>
                 </li>
             </ul>
@@ -50,7 +50,7 @@
         <div style="text-align: center; padding: 1rem 0;">
             <p style="margin: 0; color: var(--pico-muted-color); font-size: 0.85rem;">
                 <i class="fas fa-server" style="margin-right: 0.5rem;"></i>
-                <a href="https://github.com/LLukas22/Jellyswarrm">Jellyswarrm Proxy Server
+                <a href="https://github.com/kibit86/jellyproxy-ng">JellyProxy-NG
                 {% match version %}{% when Some with (v) %} v{{ v }}{% when None %}{% endmatch %}
                 </a>
                 {% match version %}{% when Some with (v) %}
@@ -58,7 +58,7 @@
                         id="jellyswarrm-release-status"
                         class="release-status release-status--checking"
                         aria-live="polite"
-                        title="Checking latest Jellyswarrm release"
+                        title="Checking latest JellyProxy-NG release"
                         hx-get="/{{ ui_route }}/release-status"
                         hx-trigger="load"
                         hx-swap="outerHTML"

@@ -1,5 +1,5 @@
 {
-  description = "Jellyswarrm - Bring all your Jellyfin servers together";
+  description = "JellyProxy-NG - Bring all your Jellyfin servers together";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

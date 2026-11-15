@@ -1,6 +1,6 @@
 # Health monitoring
 
-Jellyswarrm exposes two unauthenticated monitoring endpoints:
+JellyProxy-NG exposes two unauthenticated monitoring endpoints:
 
 * `GET /health` returns `200 OK` with `healthy` when the HTTP server is responding.
 * `GET /ready` returns `200 OK` with `ready` after startup initialization and migrations

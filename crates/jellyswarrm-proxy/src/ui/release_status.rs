@@ -14,7 +14,7 @@ use tracing::{error, warn};
 
 const RELEASE_STATUS_CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 3);
 const JELLYSWARRM_LATEST_RELEASE_URL: &str =
-    "https://api.github.com/repos/LLukas22/Jellyswarrm/releases/latest";
+    "https://api.github.com/repos/kibit86/jellyproxy-ng/releases/latest";
 
 #[derive(Debug, Clone)]
 struct ReleaseStatusCacheEntry {
@@ -123,7 +123,7 @@ async fn fetch_jellyswarrm_release_status(client: &reqwest::Client) -> Jellyswar
     if current_version.is_empty() {
         return JellyswarrmReleaseStatus::unknown(
             "Version unknown",
-            "Current Jellyswarrm version is unknown",
+            "Current JellyProxy-NG version is unknown",
         );
     }
 
@@ -139,7 +139,7 @@ async fn fetch_jellyswarrm_release_status(client: &reqwest::Client) -> Jellyswar
     {
         Ok(response) => response,
         Err(e) => {
-            warn!("Failed to check latest Jellyswarrm release: {}", e);
+            warn!("Failed to check latest JellyProxy-NG release: {}", e);
             return JellyswarrmReleaseStatus::unknown(
                 "Status unavailable",
                 "Unable to check latest release",
@@ -149,7 +149,7 @@ async fn fetch_jellyswarrm_release_status(client: &reqwest::Client) -> Jellyswar
 
     if !response.status().is_success() {
         warn!(
-            "Failed to check latest Jellyswarrm release: GitHub returned {}",
+            "Failed to check latest JellyProxy-NG release: GitHub returned {}",
             response.status()
         );
         return JellyswarrmReleaseStatus::unknown(
@@ -161,7 +161,10 @@ async fn fetch_jellyswarrm_release_status(client: &reqwest::Client) -> Jellyswar
     let release: GithubRelease = match response.json().await {
         Ok(release) => release,
         Err(e) => {
-            warn!("Failed to parse latest Jellyswarrm release payload: {}", e);
+            warn!(
+                "Failed to parse latest JellyProxy-NG release payload: {}",
+                e
+            );
             return JellyswarrmReleaseStatus::unknown(
                 "Status unavailable",
                 "Unable to check latest release",

@@ -1,6 +1,6 @@
 # Proxy architecture
 
-Jellyswarrm presents several Jellyfin servers as one. This page maps the
+JellyProxy-NG presents several Jellyfin servers as one. This page maps the
 top-level modules so you know where to look; see
 [request and data flow](DATA_FLOW.md) for how a request moves through them.
 

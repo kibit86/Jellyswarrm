@@ -11,7 +11,7 @@ Handlers receive their service handles from `http/state.rs`.
 
 ## Authenticating with backend servers
 
-Jellyswarrm separates the **proxy login token** clients use from the **backend
+JellyProxy-NG separates the **proxy login token** clients use from the **backend
 tokens** Jellyfin servers accept.
 
 ### Logging in
@@ -197,7 +197,7 @@ authorization header.
 ## Sending a remote-control command
 
 `POST /Sessions/{id}/Playing` tells another connected client to play media. Unlike
-stream delivery, the command stays inside Jellyswarrm.
+stream delivery, the command stays inside JellyProxy-NG.
 
 ```mermaid
 flowchart TD

@@ -1,13 +1,27 @@
 # CLAUDE.md — working on this repository
 
-This is a **public, AI-assisted fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm)
+This is **JellyProxy-NG**, a **public, AI-assisted fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm)
 (a proxy that presents several Jellyfin servers as one). It is made for one homelab and published as
-`ghcr.io/kibit86/jellyswarrm`. Read the [README](README.md) first; this file is the operating manual for
+`ghcr.io/kibit86/jellyproxy-ng`. Read the [README](README.md) first; this file is the operating manual for
 anyone — human or agent — who changes the code or ships a release.
 
-- Default branch: **`main`**. Remotes: `fork` = `kibit86/Jellyswarrm` (push here), `origin` = upstream (read only).
+- Default branch: **`main`**. Remotes: `fork` = `kibit86/jellyproxy-ng` (push here; the repository was renamed from `kibit86/Jellyswarrm`, GitHub redirects the old URL), `origin` = upstream (read only).
 - Rust toolchain is pinned in `rust-toolchain.toml`. The web client is the `ui` submodule (jellyfin-web) plus
   `patches/jellyfin-web/` (see "Fork features").
+
+## Naming: product name vs internal names
+
+The product is **JellyProxy-NG** (repository `kibit86/jellyproxy-ng`, image `ghcr.io/kibit86/jellyproxy-ng`; up to
+1.1.0 it was published as `ghcr.io/kibit86/jellyswarrm`, which is no longer updated). Use that name in anything a
+person reads: UI text, docs, log and error messages, the name shown to Jellyfin servers.
+
+**Do not rename the internal names**, on purpose: the crates (`jellyswarrm-proxy`, `jellyswarrm-macros`), Rust
+module paths, the binary, the `JELLYSWARRM_*` environment variables, `jellyswarrm.toml` / `jellyswarrm.db`, the
+device ids (`jellyswarrm-panel-…`), the `JellyswarrmCanManage` field read by the patched web client, and HTML ids.
+Existing installations depend on them (configuration, data directory, secrets) and every rename would conflict
+with each merge from upstream. Never edit an existing migration file (not even a comment): sqlx checksums them and a changed one stops
+every existing database from starting. If a rename of these is ever wanted, it is its own breaking release with a
+migration, not a side effect of a text change.
 
 ## Golden rules
 
@@ -56,7 +70,7 @@ SemVer tags (`X.Y.Z`): the repository that deploys the image tracks them with Re
    check with `cargo metadata --locked`. Merge it. The run on `main` does the rest.
 4. After the run: check the Actions run is green, the GitHub Release `vX.Y.Z` exists, and the tags
    `X.Y.Z`, `X.Y`, `X`, `latest` are pullable (anonymously, the package is public, and for both architectures:
-   `docker manifest inspect ghcr.io/kibit86/jellyswarrm:X.Y.Z`).
+   `docker manifest inspect ghcr.io/kibit86/jellyproxy-ng:X.Y.Z`).
 
 Version numbers: patch for fixes, minor for features, major for breaking changes (including a database change
 that cannot be undone). The fork follows its own numbering, independent of upstream's.

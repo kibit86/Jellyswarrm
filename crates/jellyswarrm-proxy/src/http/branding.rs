@@ -39,7 +39,7 @@ pub(crate) async fn handle_branding(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let mut message = "Jellyswarrm proxying to the following servers: ".to_string();
+    let mut message = "JellyProxy-NG proxying to the following servers: ".to_string();
     let custom_css = if !servers.is_empty() {
         let server_links: Vec<String> = servers
             .iter()
