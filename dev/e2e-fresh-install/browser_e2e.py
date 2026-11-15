@@ -56,6 +56,32 @@ with sync_playwright() as pw:
     page.on("response", lambda r: problems.append((r.status, r.url)) if r.status >= 400 and "favicon" not in r.url else None)
     state = {}
 
+    def s00_add_the_servers_from_the_ui():
+        # Only when the proxy starts with no preconfigured servers: the administrator adds them.
+        page.goto(f"{P}/ui/login", wait_until="networkidle")
+        page.fill('input[name="username"]', USER); page.fill('input[name="password"]', PW)
+        page.click('button[type="submit"]'); page.wait_for_load_state("networkidle"); page.wait_for_timeout(1500)
+        page.locator("a.nav-link", has_text=re.compile(r"^\s*Servers\s*$")).first.click()
+        page.wait_for_load_state("networkidle"); page.wait_for_timeout(1500)
+        if "Server A" in page.inner_text("body"):
+            print("(servers came from the configuration: nothing to add)"); return
+        page.screenshot(path=f"{OUT}/00a-no-servers.png")
+        check("a proxy with no preconfigured server starts with an empty list", "Loading" not in page.inner_text("#server-list") and "Server A" not in page.inner_text("#server-list"))
+        for name, url in (("Server A", "http://jsw-jf-a:8096"), ("Server B", "http://jsw-jf-b:8096")):
+            page.fill('#add-server input[name="name"]', name)
+            page.fill('#add-server input[name="url"]', url)
+            page.select_option('#add-server select[name="media_streaming_mode"]', "Proxy")
+            page.click('#add-server button[type="submit"]')
+            page.wait_for_timeout(2000)
+        listing = page.inner_text("#server-list"); page.screenshot(path=f"{OUT}/00b-servers-added.png")
+        check("both servers are listed after adding them from the UI", "Server A" in listing and "Server B" in listing, listing[:80].replace("\n", " "))
+        check("their address is the one typed", "http://jsw-jf-a:8096" in listing and "http://jsw-jf-b:8096" in listing)
+        modes = page.locator("#server-list select").evaluate_all("els => els.map(e => e.value)")
+        check("both use the Proxy streaming mode", modes.count("Proxy") == 2, str(modes))
+        page.wait_for_timeout(6000)
+        check("both are reported Online", page.inner_text("#server-list").count("Online") >= 2, page.inner_text("#server-list")[:200].replace("\n", " "))
+    scenario(s00_add_the_servers_from_the_ui)
+
     def s01_fresh_login_and_navigation():
         page.goto(f"{P}/ui/login", wait_until="networkidle")
         page.fill('input[name="username"]', USER); page.fill('input[name="password"]', PW)
