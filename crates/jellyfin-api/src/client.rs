@@ -154,7 +154,7 @@ impl JellyfinClient {
     ) -> Result<reqwest::RequestBuilder, Error> {
         let url = self.base_url.join(path)?;
         let auth_header = self.build_auth_header().await;
-        let user_agent = format!("Jellyswarrm API Client/{}", env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("JellyProxy-NG/{}", env!("CARGO_PKG_VERSION"));
 
         Ok(self
             .http_client
@@ -551,7 +551,7 @@ mod tests {
             .and(path("/Library/MediaFolders"))
             .and(header_matcher(
                 "user-agent",
-                format!("Jellyswarrm API Client/{}", env!("CARGO_PKG_VERSION")),
+                format!("JellyProxy-NG/{}", env!("CARGO_PKG_VERSION")),
             ))
             //.and(header("Authorization", "MediaBrowser Client=\"Jellyfin API Client\", Device=\"Unknown\", DeviceId=\"unknown-device-id\", Version=\"0.0.0\", Token=\"test_token\""))
             .respond_with(ResponseTemplate::new(200).set_body_json(folders_response))

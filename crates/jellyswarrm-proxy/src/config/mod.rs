@@ -52,7 +52,7 @@ impl fmt::Display for MediaStreamingMode {
 }
 
 pub(crate) static CLIENT_INFO: LazyLock<ClientInfo> = LazyLock::new(|| ClientInfo {
-    client: "Jellyswarrm Proxy".to_string(),
+    client: "JellyProxy-NG".to_string(),
     device: "Server".to_string(),
     device_id: "jellyswarrm-proxy".to_string(),
     version: env!("CARGO_PKG_VERSION").to_string(),
@@ -67,7 +67,7 @@ fn default_public_address() -> String {
 }
 
 fn default_server_name() -> String {
-    "Jellyswarrm Proxy".to_string()
+    "JellyProxy-NG".to_string()
 }
 
 fn default_host() -> String {

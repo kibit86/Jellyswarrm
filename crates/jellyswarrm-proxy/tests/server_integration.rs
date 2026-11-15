@@ -749,7 +749,7 @@ async fn verify_seerr_integration(client: &Client, base_url: &str) -> Result<()>
             .await?,
     )
     .await?;
-    assert_eq!(system_info["ServerName"], "Jellyswarrm Proxy");
+    assert_eq!(system_info["ServerName"], "JellyProxy-NG");
 
     let (libraries, movies) = wait_for_seerr_catalog(client, base_url, scanner_token).await?;
     let library_names = item_names(&libraries)?;

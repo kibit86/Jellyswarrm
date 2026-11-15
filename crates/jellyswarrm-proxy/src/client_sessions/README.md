@@ -1,7 +1,7 @@
 # Client sessions
 
 This module gives SyncPlay and remote control one shared client identity and
-WebSocket connection. Control stays in Jellyswarrm so clients can play media
+WebSocket connection. Control stays in JellyProxy-NG so clients can play media
 from different backends without involving an upstream server in coordination.
 
 The router sends `/SyncPlay/*` requests to the group coordinator and

@@ -211,8 +211,8 @@ pub(crate) struct BrandingConfig {
 impl Default for BrandingConfig {
     fn default() -> Self {
         Self {
-            login_disclaimer:
-                "You are using Jellyswarrm Proxy, a <b>reverse</b> proxy for Jellyfin.".to_string(),
+            login_disclaimer: "You are using JellyProxy-NG, a <b>reverse</b> proxy for Jellyfin."
+                .to_string(),
             custom_css: String::new(),
             splashscreen_enabled: false,
         }

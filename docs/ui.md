@@ -1,8 +1,8 @@
-# Jellyswarrm UI Documentation
+# JellyProxy-NG UI Documentation
 
 ## Admin Interface Overview
 
-The Admin Interface is displayed when you log in with an administrator account. It provides tools to manage connected Jellyfin servers, user accounts, and global settings for your Jellyswarrm instance.
+The Admin Interface is displayed when you log in with an administrator account. It provides tools to manage connected Jellyfin servers, user accounts, and global settings for your JellyProxy-NG instance.
 
 ### Adding Servers  
 
@@ -10,9 +10,9 @@ The Admin Interface is displayed when you log in with an administrator account. 
   <img src="./images/servers.png" alt="Servers" width="90%">
 </p>  
 
-To connect your Jellyfin servers to Jellyswarrm, follow these steps:  
+To connect your Jellyfin servers to JellyProxy-NG, follow these steps:  
 
-1. Open the Jellyswarrm Web UI in your browser:  
+1. Open the JellyProxy-NG Web UI in your browser:  
    `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`  
 
 2. Log in with the username and password you set in the environment variables during deployment.  
@@ -23,7 +23,7 @@ To connect your Jellyfin servers to Jellyswarrm, follow these steps:
    - **Server Name** – A friendly display name for the server.  
    - **Jellyfin URL** – The full URL to your Jellyfin server (e.g. `http://jellyfin.example.com`).  
    - **Priority** – Determines which server takes precedence for tasks not handled by the proxy (such as theming/styling). Higher numbers = higher priority.  
-   - **Streaming** – Choose `Redirect` when clients can reach that Jellyfin server directly, or `Proxy` when the stream must pass through Jellyswarrm.  
+   - **Streaming** – Choose `Redirect` when clients can reach that Jellyfin server directly, or `Proxy` when the stream must pass through JellyProxy-NG.  
 
 5. Click **Add** to save the server.  
 
@@ -36,20 +36,20 @@ You can change the streaming mode for an existing server directly from the serve
 </p>
 
 
-After you add a server, you can optionally provide admin credentials. This allows Jellyswarrm to create and manage user accounts on that server automatically when using the federation features. Simply press the admin icon next to the server entry and enter the admin username and password for that Jellyfin instance.
+After you add a server, you can optionally provide admin credentials. This allows JellyProxy-NG to create and manage user accounts on that server automatically when using the federation features. Simply press the admin icon next to the server entry and enter the admin username and password for that Jellyfin instance.
 
 
 
 ### User Management & Federation
 
-Jellyswarrm allows you to link users across multiple Jellyfin servers into a single unified account. This way, users can log in once and access media from all their connected servers seamlessly.
+JellyProxy-NG allows you to link users across multiple Jellyfin servers into a single unified account. This way, users can log in once and access media from all their connected servers seamlessly.
 
 ---
 
 ### Adding Users
 
 #### Federation (Recommended)
-When creating a new user in Jellyswarrm via the Admin UI, you can check the **Enable Federation** option.
+When creating a new user in JellyProxy-NG via the Admin UI, you can check the **Enable Federation** option.
 
 <p align="center">
   <img src="./images/add_user.png" alt="Add User with Federation" width="90%">
@@ -58,24 +58,24 @@ When creating a new user in Jellyswarrm via the Admin UI, you can check the **En
 This will automatically:
 1. Create the user on all connected Jellyfin servers (requires Admin credentials to be configured for those servers).
 2. Set the same password for all of them.
-3. Automatically create the server mappings in Jellyswarrm.
+3. Automatically create the server mappings in JellyProxy-NG.
 
 This ensures that the user exists everywhere and is ready to use immediately without manual configuration.
 
 #### Automatic Mapping (Login)
-If `auto_create_users_on_login` is enabled, users who already exist on one or more connected servers can log in directly with their existing Jellyfin credentials. Jellyswarrm will automatically create a local user and set up the necessary server mappings.
+If `auto_create_users_on_login` is enabled, users who already exist on one or more connected servers can log in directly with their existing Jellyfin credentials. JellyProxy-NG will automatically create a local user and set up the necessary server mappings.
 
-If the same username and password exist on multiple servers, Jellyswarrm will link those accounts together automatically (only while this setting is enabled). This provides a smooth experience, giving the user unified access to all linked servers.
+If the same username and password exist on multiple servers, JellyProxy-NG will link those accounts together automatically (only while this setting is enabled). This provides a smooth experience, giving the user unified access to all linked servers.
 
 #### Manual Creation
-To manually create a user in Jellyswarrm without federation:
+To manually create a user in JellyProxy-NG without federation:
 
-1. Open the Jellyswarrm Web UI in your browser:
+1. Open the JellyProxy-NG Web UI in your browser:
    `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`
 2. Log in with the admin credentials you set during deployment.
 3. Navigate to the **Users** section.
 4. Define a **username** and **password** for the new user.
-5. Uncheck **Enable Federation** if you only want to create the user locally in Jellyswarrm.
+5. Uncheck **Enable Federation** if you only want to create the user locally in JellyProxy-NG.
 6. Click **Add** to create the user.
 
 ---
@@ -94,11 +94,11 @@ To manually link a user to additional server accounts (e.g. if they have differe
 4. Enter the **username** and **password** for the Jellyfin account on that server.
 5. Click **Add** to save the mapping.
 
-Users can also link their own accounts from **Connected Servers** in the Jellyswarrm UI. For an available server, choose **Connect**, then select **Password** or **Quick Connect** in the dialog. Quick Connect displays a code to approve in an already signed-in Jellyfin client on that *backend* server, where Quick Connect must be enabled. The code is temporary; Jellyswarrm saves the resulting backend access token for future logins. If the token is revoked, choose **Reconnect** on the connected server and select either sign-in method. Expired codes or connection errors can be retried from the dialog. Jellyfin does not provide a refresh token for this flow. Existing Jellyfin app sessions may need to sign in to Jellyswarrm again to pick up a newly linked server.
+Users can also link their own accounts from **Connected Servers** in the JellyProxy-NG UI. For an available server, choose **Connect**, then select **Password** or **Quick Connect** in the dialog. Quick Connect displays a code to approve in an already signed-in Jellyfin client on that *backend* server, where Quick Connect must be enabled. The code is temporary; JellyProxy-NG saves the resulting backend access token for future logins. If the token is revoked, choose **Reconnect** on the connected server and select either sign-in method. Expired codes or connection errors can be retried from the dialog. Jellyfin does not provide a refresh token for this flow. Existing Jellyfin app sessions may need to sign in to JellyProxy-NG again to pick up a newly linked server.
 
 Mapping credentials and backend tokens in per-client authorization sessions are encrypted using separate purpose-specific keys derived from the persistent `session_key` in `jellyswarrm.toml`. Back up that configuration file together with the database: losing or changing `session_key` makes encrypted mappings and sessions unreadable. Existing session tokens are encrypted on startup; existing mappings are upgraded when they can be decrypted, or after successful backend authentication if a legacy plaintext password resembles encrypted data. New local user passwords are stored with salted Argon2id hashes. Existing SHA-256 login hashes are upgraded after a successful login, once their legacy mappings have been safely re-encrypted. The admin password is still held in the administrator's configuration: protect that file and check permissions on existing installations (newly saved files use owner-only permissions on Unix).
 
-Login-time migration also supports legacy mappings encrypted with the original raw password. Password hashing and verification run on blocking workers with bounded concurrency. Before changing a local password, Jellyswarrm validates any remaining ambiguous legacy password mappings directly with their backend servers. If validation fails, the local password stays unchanged and the UI asks you to check server connectivity or reconnect the affected accounts from **Connected Servers**, then retry.
+Login-time migration also supports legacy mappings encrypted with the original raw password. Password hashing and verification run on blocking workers with bounded concurrency. Before changing a local password, JellyProxy-NG validates any remaining ambiguous legacy password mappings directly with their backend servers. If validation fails, the local password stays unchanged and the UI asks you to check server connectivity or reconnect the affected accounts from **Connected Servers**, then retry.
 
 ---
 
@@ -115,9 +115,9 @@ When deleting a user, you can optionally choose to **Delete from all servers**, 
   <img src="./images/settings.png" alt="Settings" width="90%">
 </p>  
 
-The **Settings** section lets you configure global options that affect how Jellyswarrm appears to your users and clients:  
+The **Settings** section lets you configure global options that affect how JellyProxy-NG appears to your users and clients:  
 
 - **Public Address** – The external address reported to Jellyfin clients.  
 - **Server Name** – The display name shown to users when they log in.  
-- **Add Server Name to Title** – When enabled, Jellyswarrm will append the server name to media titles in the format:  
+- **Add Server Name to Title** – When enabled, JellyProxy-NG will append the server name to media titles in the format:  
   `Title [Server Name]`.  

@@ -1,7 +1,7 @@
 > [!NOTE]
-> **This is a vibe-coded fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), made for one homelab and shared as is. With an AI coding assistant (Claude) it changes how accounts work and adds a few things on top of upstream v1.0.0: **one proxy account** with **one mapped account per Jellyfin server** (names and passwords may differ; apps sign in to the proxy), **each server's own dashboard opened already signed in** from the proxy (and the first-run setup of a brand-new server done through it), media management on the servers where the mapped account is an administrator, and Jellyfin LAN discovery (UDP 7359). See [docs/administration.md](docs/administration.md). Images are published as `ghcr.io/kibit86/jellyswarrm` (SemVer tags; how releases work: [docs/releasing.md](docs/releasing.md)). Everything else is upstream's work. Use at your own risk, with no support: the original project remains the reference, and problems found in this fork should not be reported to upstream.
+> **JellyProxy-NG is a vibe-coded fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), made for one homelab and shared as is. With an AI coding assistant (Claude) it changes how accounts work and adds a few things on top of upstream v1.0.0: **one proxy account** with **one mapped account per Jellyfin server** (names and passwords may differ; apps sign in to the proxy), **each server's own dashboard opened already signed in** from the proxy (and the first-run setup of a brand-new server done through it), media management on the servers where the mapped account is an administrator, and Jellyfin LAN discovery (UDP 7359). See [docs/administration.md](docs/administration.md). Images are published as `ghcr.io/kibit86/jellyproxy-ng` (up to 1.1.0 the same builds were published as `ghcr.io/kibit86/jellyswarrm`, which is no longer updated). The program, its settings (`JELLYSWARRM_*`), its files (`jellyswarrm.toml`, `jellyswarrm.db`) and its Rust crates keep the original names on purpose, so nothing has to be migrated and upstream changes stay easy to merge (SemVer tags; how releases work: [docs/releasing.md](docs/releasing.md)). Everything else is upstream's work. Use at your own risk, with no support: the original project remains the reference, and problems found in this fork should not be reported to upstream.
 
-<h1 align="center">Jellyswarrm</h1>
+<h1 align="center">JellyProxy-NG</h1>
 
 <h3 align="center">Many servers. Single experience.</h3>
 
@@ -12,12 +12,12 @@
 <a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">
 <img alt="MIT License" src="https://img.shields.io/badge/License-GPL_v2-blue.svg"/>
 </a>
-<a href="https://github.com/LLukas22/Jellyswarrm/releases">
-<img alt="Current Release" src="https://img.shields.io/github/release/LLukas22/Jellyswarrm.svg"/>
+<a href="https://github.com/kibit86/jellyproxy-ng/releases">
+<img alt="Current Release" src="https://img.shields.io/github/release/kibit86/jellyproxy-ng.svg"/>
 </a>
 </p>
 
-Jellyswarrm is a reverse proxy that lets you combine multiple Jellyfin servers into one place. If you’ve got libraries spread across different locations or just want everything together, Jellyswarrm makes it easy to access all your media from a single interface.
+JellyProxy-NG is a reverse proxy that lets you combine multiple Jellyfin servers into one place. If you’ve got libraries spread across different locations or just want everything together, JellyProxy-NG makes it easy to access all your media from a single interface.
 
 ---
 
@@ -36,7 +36,7 @@ Jellyswarrm is a reverse proxy that lets you combine multiple Jellyfin servers i
 ## Features
 
 > [!WARNING]
-> Jellyswarrm is still in **development**. If you run into issues, please report them on the [GitHub Issues page](https://github.com/LLukas22/Jellyswarrm/issues).
+> JellyProxy-NG is still in **development**. If you run into issues, please report them on the [GitHub Issues page of this fork](https://github.com/kibit86/jellyproxy-ng/issues).
 
 ### ✅ Working
 
@@ -56,13 +56,13 @@ Jellyswarrm is a reverse proxy that lets you combine multiple Jellyfin servers i
 
 ### ⚠️ In Progress
 * **Automatic Bitrate Adjustment** – Stream quality based on network conditions isn’t supported yet.
-* **Media Management** – Adding or deleting *libraries* through Jellyswarrm is not implemented (item editing and deletion are, in this fork, where you are an administrator).
+* **Media Management** – Adding or deleting *libraries* through JellyProxy-NG is not implemented (item editing and deletion are, in this fork, where you are an administrator).
 
 ---
 
 ## Deployment
 
-The easiest way to run Jellyswarrm is with the prebuilt [Docker images](https://github.com/LLukas22?tab=packages&repo_name=Jellyswarrm).
+The easiest way to run JellyProxy-NG is with the prebuilt [Docker images](https://github.com/kibit86?tab=packages&repo_name=jellyproxy-ng).
 Here’s a minimal `docker-compose.yml` example to get started:
 
 ```yaml
@@ -100,7 +100,7 @@ For `/health`, `/ready`, and Docker health check details, see the [health monito
 To get started with development, you'll need to clone the repository along with its submodules. This ensures you have all the necessary components for a complete build:
 
 ```bash
-git clone --recurse-submodules https://github.com/LLukas22/Jellyswarrm.git
+git clone --recurse-submodules https://github.com/kibit86/jellyproxy-ng.git
 ```
 
 If you've already cloned the repository, you can initialize the submodules separately:
@@ -114,7 +114,7 @@ git submodule update
 <details open>
 <summary><strong>Docker</strong></summary>
 
-The quickest way to get Jellyswarrm up and running is with Docker. Simply use the provided [docker-compose](./docker-compose.yml) configuration:
+The quickest way to get JellyProxy-NG up and running is with Docker. Simply use the provided [docker-compose](./docker-compose.yml) configuration:
 
 ```bash
 docker compose up -d
@@ -153,7 +153,7 @@ and unmaintained transitive dependencies are reported as warnings.
 
 ### Local Test Servers
 
-To test Jellyswarrm against six preconfigured Jellyfin instances (two each for
+To test JellyProxy-NG against six preconfigured Jellyfin instances (two each for
 Movies, TV Shows, and Music) and Seerr, run:
 
 ```bash
@@ -186,10 +186,10 @@ Jellyfin servers and media.
 ## FAQ  
 
 1. **Why not just add multiple servers directly in the Jellyfin app?**  
-   Some Jellyfin apps do support multiple servers, but switching between them can be inconvenient. Jellyswarrm brings everything together in one place and also merges features like *Next Up* and *Recently Added* across all servers. This way, you can easily see what’s new in your own libraries or what your friends have added.  
+   Some Jellyfin apps do support multiple servers, but switching between them can be inconvenient. JellyProxy-NG brings everything together in one place and also merges features like *Next Up* and *Recently Added* across all servers. This way, you can easily see what’s new in your own libraries or what your friends have added.  
 
-2. **Will Jellyswarrm work with my existing Jellyfin apps?**  
-   Most likely! Jellyswarrm presents itself as a standard Jellyfin server, so most clients should work out of the box. That said, not every Jellyfin client has been tested, so a few may have issues.  
+2. **Will JellyProxy-NG work with my existing Jellyfin apps?**  
+   Most likely! JellyProxy-NG presents itself as a standard Jellyfin server, so most clients should work out of the box. That said, not every Jellyfin client has been tested, so a few may have issues.  
 
-3. **Why use Jellyswarrm instead of mounting a remote library via e.g. SMB?**  
-   Jellyswarrm is built to **connect your servers with your friends’ servers** across different networks. Setting up SMB in these cases can be complicated, and performance is often worse. With Jellyswarrm, content is streamed directly from the original server, so all the heavy lifting (like transcoding) happens where the media actually lives.
+3. **Why use JellyProxy-NG instead of mounting a remote library via e.g. SMB?**  
+   JellyProxy-NG is built to **connect your servers with your friends’ servers** across different networks. Setting up SMB in these cases can be complicated, and performance is often worse. With JellyProxy-NG, content is streamed directly from the original server, so all the heavy lifting (like transcoding) happens where the media actually lives.

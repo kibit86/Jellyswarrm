@@ -1,6 +1,6 @@
 # Development Environment
 
-A Docker Compose environment for testing Jellyswarrm against two independent
+A Docker Compose environment for testing JellyProxy-NG against two independent
 Jellyfin servers for each library type: Movies, TV Shows, and Music. All six
 servers use read-only trees of compact, freely licensed test media while keeping
 their configuration, users, item databases, and caches isolated. A Seerr instance
@@ -21,9 +21,9 @@ complete stack to be ready. Media and application state are reused on later
 runs.
 
 Debug builds of `jellyswarrm-proxy` load `data/jellyswarrm.dev.toml` and
-automatically add or update these six servers in Jellyswarrm. Existing
+automatically add or update these six servers in JellyProxy-NG. Existing
 non-development servers are left untouched. They also create the local
-Jellyswarrm user `test` / `test` and map all six upstream servers to that user
+JellyProxy-NG user `test` / `test` and map all six upstream servers to that user
 with the same credentials. Media deduplication is enabled by default (toggle it
 from the admin Settings tab), exposing Big Buck Bunny as one item with versions
 from both movie servers.
@@ -50,7 +50,7 @@ The exact Jellyfin and Seerr releases are set through `JELLYFIN_VERSION` and
 | Music 2 | <http://localhost:8101> |
 | Seerr | <http://localhost:5055> |
 
-Every server has the regular Jellyswarrm account `test` / `test`, with access
+Every server has the regular JellyProxy-NG account `test` / `test`, with access
 to all its libraries. The administrator account remains `admin` / `password`.
 
 ### Many-library pagination fixture (issue #202)
@@ -70,7 +70,7 @@ For an already-running local stack, add the libraries without resetting any data
 JELLYFIN_LIBRARY_COUNT=25 just seed-libraries
 ```
 
-Start your debug Jellyswarrm build and log in as `test` / `test`. Open the admin
+Start your debug JellyProxy-NG build and log in as `test` / `test`. Open the admin
 **Libraries** tab and check that real libraries beyond the first 20 are available
 for assignment to virtual libraries, including the `Pagination 24` entries.
 The default setup exercises regular-user mappings and automatic merging. To
@@ -96,7 +96,7 @@ state.
 
 The music initializers also create **Music 1 Test Playlist** (four Goldberg
 Variations tracks) and **Music 2 Test Playlist** (two Ghost Solos tracks), owned
-by `test`. Log into Jellyswarrm as `test` / `test` and open **Music → Playlists**
+by `test`. Log into JellyProxy-NG as `test` / `test` and open **Music → Playlists**
 to browse, play, reorder, or edit them. Each playlist contains tracks from one
 server, matching Jellyfin's playlist ownership requirements.
 
@@ -134,11 +134,11 @@ already listens on `0.0.0.0:3000` by default, so no host networking is needed.
 Seerr configuration and its SQLite database persist in the `seerr-config` named
 volume.
 
-Jellyswarrm reports the setup-only administrator capability that Seerr requires,
+JellyProxy-NG reports the setup-only administrator capability that Seerr requires,
 but continues to enforce the virtual user's normal upstream permissions. No
 backend administrator account is needed, and other clients continue to see the
 virtual account as non-administrative. Seerr stores a dedicated read-only
-Jellyswarrm API key and discovers the merged Movies and Shows libraries through
+JellyProxy-NG API key and discovers the merged Movies and Shows libraries through
 their virtual IDs. See
 [`SEERR-COMPATIBILITY.md`](SEERR-COMPATIBILITY.md) for the supported API surface.
 
@@ -171,7 +171,7 @@ The Rust test uses Testcontainers' Docker Compose support with
 `docker-compose.yml` and `docker-compose.integration.yml`. It creates a unique
 Compose project with fresh Jellyfin configuration volumes and random host
 ports, so it can run while the regular development stack is active. The test
-starts the compiled Jellyswarrm server against those six instances and checks
+starts the compiled JellyProxy-NG server against those six instances and checks
 failed and successful login, automatic user mappings, merged virtual
 libraries, duplicate source labeling, playback info, and ranged media streaming
 from both movie servers. The test is ignored by normal `cargo test` runs

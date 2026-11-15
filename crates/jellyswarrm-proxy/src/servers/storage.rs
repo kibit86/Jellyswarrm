@@ -122,10 +122,7 @@ pub(crate) struct ServerStorageService {
 impl ServerStorageService {
     pub(crate) fn new(pool: SqlitePool) -> Self {
         let http_client = reqwest::Client::builder()
-            .user_agent(concat!(
-                "Jellyswarrm API Client/",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(concat!("JellyProxy-NG/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_else(|e| {

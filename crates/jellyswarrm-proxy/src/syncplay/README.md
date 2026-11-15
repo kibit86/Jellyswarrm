@@ -1,6 +1,6 @@
 # SyncPlay
 
-SyncPlay coordinates group playback inside Jellyswarrm, allowing a group to
+SyncPlay coordinates group playback inside JellyProxy-NG, allowing a group to
 play media from different backends. `/SyncPlay/*` handlers update group state
 and send commands to members through the shared client-session connections.
 

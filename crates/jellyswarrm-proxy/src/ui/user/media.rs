@@ -264,7 +264,7 @@ pub(crate) async fn proxy_media_image(
     // For now, let's use state.reqwest_client
 
     let auth_header = format!(
-        "MediaBrowser Client=\"Jellyswarrm Proxy\", Device=\"Server\", DeviceId=\"jellyswarrm-proxy\", Version=\"{}\", Token=\"{}\"",
+        "MediaBrowser Client=\"JellyProxy-NG\", Device=\"Server\", DeviceId=\"jellyswarrm-proxy\", Version=\"{}\", Token=\"{}\"",
         env!("CARGO_PKG_VERSION"),
         token
     );

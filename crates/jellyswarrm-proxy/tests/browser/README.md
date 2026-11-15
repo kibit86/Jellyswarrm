@@ -1,7 +1,7 @@
 # Browser integration tests
 
 These verify remote control across two media backends and two-client SyncPlay
-through Jellyfin Web: create/join a group, play, pause, seek, switch media across backends, leave, and rejoin during playback. Two further tests use the Jellyswarrm UI to link an unmapped local user to a real Jellyfin backend, once by username/password and once by Quick Connect. Both assert the saved mapping and a fresh client login; the Quick Connect test approves the displayed code through the backend API.
+through Jellyfin Web: create/join a group, play, pause, seek, switch media across backends, leave, and rejoin during playback. Two further tests use the JellyProxy-NG UI to link an unmapped local user to a real Jellyfin backend, once by username/password and once by Quick Connect. Both assert the saved mapping and a fresh client login; the Quick Connect test approves the displayed code through the backend API.
 
 The Rust Playwright tests share the server integration fixture and browser setup. Each Chrome
 instance runs in its own container; Testcontainers manages startup and cleanup.

@@ -1,6 +1,6 @@
-# Jellyswarrm Configuration Documentation  
+# JellyProxy-NG Configuration Documentation  
 
-Jellyswarrm stores its configuration in a **TOML** file located at:  
+JellyProxy-NG stores its configuration in a **TOML** file located at:  
 `./data/jellyswarrm.toml` (inside the container).  
 
 The SQLite database is stored at:  
@@ -22,7 +22,7 @@ The table below lists all available configuration options:
 |----------|---------------|-----------------|-------------|
 | `server_id` | *Generated UUID (32 hex chars)* | `JELLYSWARRM_SERVER_ID` | Unique identifier for the proxy server instance. |
 | `public_address` | `localhost:3000` | `JELLYSWARRM_PUBLIC_ADDRESS` | Public address where the proxy is accessible. |
-| `server_name` | `Jellyswarrm Proxy` | `JELLYSWARRM_SERVER_NAME` | Display name for the proxy server. |
+| `server_name` | `JellyProxy-NG` | `JELLYSWARRM_SERVER_NAME` | Display name for the proxy server. |
 | `host` | `0.0.0.0` | `JELLYSWARRM_HOST` | Host address the server binds to. |
 | `port` | `3000` | `JELLYSWARRM_PORT` | Port number for the proxy server. |
 | `include_server_name_in_media` | `true` | `JELLYSWARRM_INCLUDE_SERVER_NAME_IN_MEDIA` | Append the server name to media titles in responses. |

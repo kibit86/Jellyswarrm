@@ -1,6 +1,6 @@
 use std::{env, fs, path::PathBuf};
 
-const PLACEHOLDER: &str = "<!doctype html><html><body><h1>Jellyswarrm development build</h1><p>The web client is not built. Run <code>just ui</code> and rebuild.</p></body></html>\n";
+const PLACEHOLDER: &str = "<!doctype html><html><body><h1>JellyProxy-NG development build</h1><p>The web client is not built. Run <code>just ui</code> and rebuild.</p></body></html>\n";
 
 fn main() {
     println!("cargo:rerun-if-changed=migrations");
