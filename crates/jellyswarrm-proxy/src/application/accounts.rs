@@ -69,9 +69,15 @@ pub(crate) async fn user_for_credential(
     authorization.get_user_by_token(token).await
 }
 
-/// Whether the caller is an administrator on at least one of their backends.
-/// Clients use this flag to show editing and dashboard entries; the proxy
+/// The administrator flag to show this caller: they are an administrator on at
+/// least one of their backends. Native apps use it to offer editing; the proxy
 /// still refuses any management request aimed at a backend where they are not.
+///
+/// The bundled web client is told `false`: it reads the per-item
+/// `JellyswarrmCanManage` field instead, and with a global flag it would offer
+/// a Dashboard that the merged API cannot serve (server-wide administration is
+/// opened per server from the management UI). The lookup still runs, because
+/// it is what teaches the proxy which items that viewer may manage.
 async fn administrator_on_any_backend(state: &MediaServices, input: &OperationRequest) -> bool {
     let sessions = input
         .context
@@ -79,11 +85,19 @@ async fn administrator_on_any_backend(state: &MediaServices, input: &OperationRe
         .sessions
         .as_deref()
         .unwrap_or_default();
-    !state
+    let administrator = !state
         .admin_rights
         .administrator_servers(&state.reqwest_client, sessions)
         .await
-        .is_empty()
+        .is_empty();
+    let web_client = matches!(
+        input.context.authorization(),
+        Some(
+            crate::protocol::caller::JellyfinAuthorization::Authorization(authorization)
+                | crate::protocol::caller::JellyfinAuthorization::XEmbyAuthorization(authorization)
+        ) if is_web_client(authorization)
+    );
+    administrator && !web_client
 }
 
 async fn process_user(
@@ -550,8 +564,8 @@ async fn decorate_auth_response(
     // Seerr requires this flag to finish setup. For everyone else it means "an
     // administrator on at least one backend"; authorization remains enforced by
     // Jellyswarrm per backend and by the user's real upstream sessions.
-    auth_response.user.policy.is_administrator =
-        is_seerr_client(login_authorization) || is_administrator;
+    auth_response.user.policy.is_administrator = is_seerr_client(login_authorization)
+        || (is_administrator && !is_web_client(login_authorization));
     auth_response.user.policy.sync_play_access = SyncPlayUserAccessType::CreateAndJoinGroups;
     auth_response.access_token = user.virtual_key.clone();
     auth_response.user.id = user.id.to_string();
@@ -564,6 +578,12 @@ async fn decorate_auth_response(
     )
     .await;
     auth_response
+}
+
+/// The Jellyfin web client, which is bundled with the proxy and patched to show
+/// item management from `JellyswarrmCanManage`.
+fn is_web_client(authorization: &Authorization) -> bool {
+    authorization.client.eq_ignore_ascii_case("Jellyfin Web")
 }
 
 fn is_seerr_client(authorization: &Authorization) -> bool {

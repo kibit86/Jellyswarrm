@@ -249,3 +249,65 @@ async fn items_tell_the_client_where_the_viewer_may_manage() {
     assert_eq!(detail(1).await["JellyswarrmCanManage"], true);
     assert_eq!(detail(0).await["JellyswarrmCanManage"], false);
 }
+
+/// A device of this app, with its own backend sessions (as a real login would
+/// create), and the header that device sends.
+async fn app_device(f: &Fixture, client: &str) -> String {
+    let device_id = format!("{}-device", client.replace(' ', "-").to_lowercase());
+    let authorization = Authorization {
+        client: client.into(),
+        device: "Living room".into(),
+        device_id: device_id.clone(),
+        version: "1".into(),
+        token: None,
+    };
+    for (index, server) in f.state.server_storage.list_servers().await.unwrap().iter().enumerate()
+    {
+        f.state
+            .user_authorization
+            .store_authorization_session(
+                &f.user.id,
+                server,
+                &authorization,
+                format!("app-token-{device_id}-{index}"),
+                format!("backend-user-{index}"),
+                None,
+            )
+            .await
+            .unwrap();
+    }
+    Authorization {
+        token: Some(f.user.virtual_key.clone()),
+        ..authorization
+    }
+    .to_header_value()
+}
+
+#[tokio::test]
+async fn the_web_client_reads_items_while_native_apps_get_the_global_flag() {
+    for (client, expected_flag) in [("Jellyfin Web", false), ("Jellyfin Android TV", true)] {
+        let f = Fixture::for_scenario(Scenario::NormalServers).await;
+        f.healthy().await;
+        for index in 0..2 {
+            f.administrator_on(index, index == 1).await;
+            Mock::given(method("GET"))
+                .and(path("/Users/Me"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                    "Id": format!("backend-user-{index}"), "Name": "alice", "ServerId": "backend",
+                    "Policy": {"IsAdministrator": index == 1, "SyncPlayAccess": "None"}
+                })))
+                .mount(&f.upstreams[index])
+                .await;
+        }
+        let header = app_device(&f, client).await;
+        let me = reqwest::Client::new()
+            .get(format!("{}/Users/Me", f.url))
+            .header("Authorization", header)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(me.status(), StatusCode::OK, "{client}");
+        let me: Value = me.json().await.unwrap();
+        assert_eq!(me["Policy"]["IsAdministrator"], expected_flag, "{client}");
+    }
+}
