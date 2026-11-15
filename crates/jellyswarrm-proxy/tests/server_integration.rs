@@ -635,7 +635,7 @@ fn write_proxy_config(
     deduplicate_media: bool,
 ) -> Result<()> {
     let mut config = format!(
-        "host = \"127.0.0.1\"\nport = {proxy_port}\ninclude_server_name_in_media = false\nmerge_libraries = true\ndeduplicate_media = {deduplicate_media}\nserver_background_check_interval_secs = 1\nauto_create_users_on_login = true\n"
+        "host = \"127.0.0.1\"\nport = {proxy_port}\ninclude_server_name_in_media = false\nmerge_libraries = true\ndeduplicate_media = {deduplicate_media}\nserver_background_check_interval_secs = 1\nauto_create_users_on_login = true\nusername = \"proxy-admin\"\npassword = \"proxy-admin-password\"\n"
     );
     for (name, url, priority) in upstreams {
         config.push_str(&format!(
