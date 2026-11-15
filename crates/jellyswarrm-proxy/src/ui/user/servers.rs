@@ -28,6 +28,9 @@ pub(crate) struct UserServerListTemplate {
     pub(crate) unmapped_servers: Vec<Server>,
     /// IDs of the listed servers where the user is an administrator.
     pub(crate) administrator_ids: Vec<i64>,
+    /// IDs of the listed (not yet connected) servers that were never set up. Only the
+    /// proxy administrator is offered them: their first-run wizard opens through the proxy.
+    pub(crate) setup_ids: Vec<i64>,
     pub(crate) ui_route: String,
 }
 
@@ -228,11 +231,28 @@ pub(crate) async fn get_user_servers(
     .flatten()
     .collect();
 
+    let setup_ids: Vec<i64> = if user.role == crate::ui::auth::UserRole::Admin {
+        futures_util::future::join_all(unmapped_servers.iter().map(|server| async {
+            state
+                .panel_identities
+                .setup_pending(&state, server)
+                .await
+                .then_some(server.id.as_i64())
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
+    } else {
+        Vec::new()
+    };
+
     let template = UserServerListTemplate {
         username: user.username,
         servers: mapped_servers,
         unmapped_servers,
         administrator_ids,
+        setup_ids,
         ui_route: state.paths.ui_route(),
     };
 

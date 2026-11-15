@@ -167,14 +167,18 @@ fn json_for_script<T: serde::Serialize>(value: &T) -> String {
 /// What the page must do before the backend's web client starts: keep its storage
 /// apart from the proxy's own client (and from other backends), and hold the
 /// signed-in session for this backend.
-fn panel_script(server: &Server, mount: &str, identity: &PanelIdentity) -> String {
-    let seed = serde_json::json!({
-        "Id": identity.backend_server_id,
-        "Name": server.name,
-        "LastConnectionMode": 2,
-        "UserId": identity.user_id,
-        "AccessToken": identity.token,
-    });
+fn panel_script(server: &Server, mount: &str, entry: &Entry) -> String {
+    // No session to hand over during a first setup: the wizard creates the account.
+    let seed = match entry {
+        Entry::Account(identity) => serde_json::json!({
+            "Id": identity.backend_server_id,
+            "Name": server.name,
+            "LastConnectionMode": 2,
+            "UserId": identity.user_id,
+            "AccessToken": identity.token,
+        }),
+        Entry::FirstSetup => serde_json::Value::Null,
+    };
     PANEL_SCRIPT
         .replace("%PREFIX%", &json_for_script(&format!("jsw-backend-{}:", server.id)))
         .replace("%MOUNT%", &json_for_script(&mount))
@@ -201,28 +205,41 @@ fn has_dot_segments(rest: &str) -> bool {
     decoded.split(['/', '\\']).any(|part| part == "..")
 }
 
+/// How the user is let into a server.
+enum Entry {
+    /// Signed in with the account they mapped there, which administers it.
+    Account(std::sync::Arc<PanelIdentity>),
+    /// The server has never been set up (its first-run wizard is open) and the user
+    /// is the proxy administrator: there is no account yet, so the wizard runs
+    /// through the pass-through and creates the first one.
+    FirstSetup,
+}
+
 /// Let the user in only if the account they mapped on `server_id` is an
-/// administrator there. Returns the server and the signed-in backend identity.
+/// administrator there; or, for the proxy administrator, if the server is still
+/// waiting for its first setup. Returns the server and how they got in.
 async fn authorize(
     state: &ManagementState,
-    user_id: &str,
+    user: &crate::ui::auth::UiUser,
     server_id: ServerId,
-) -> Result<(Server, std::sync::Arc<PanelIdentity>), StatusCode> {
+) -> Result<(Server, Entry), StatusCode> {
     let server = state
         .server_storage
         .get_server_by_id(server_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let identity = state
-        .panel_identities
-        .get(state, user_id, &server)
-        .await
-        .map_err(StatusCode::from)?;
-    if !identity.is_administrator {
-        return Err(StatusCode::FORBIDDEN);
+    match state.panel_identities.get(state, &user.id, &server).await {
+        Ok(identity) if identity.is_administrator => Ok((server, Entry::Account(identity))),
+        Ok(_) => Err(StatusCode::FORBIDDEN),
+        Err(crate::ui::backend_identity::IdentityError::NotConnected)
+            if user.role == crate::ui::auth::UserRole::Admin
+                && state.panel_identities.setup_pending(state, &server).await =>
+        {
+            Ok((server, Entry::FirstSetup))
+        }
+        Err(error) => Err(StatusCode::from(error)),
     }
-    Ok((server, identity))
 }
 
 /// `/<ui>/backend/{id}` without a path: open the backend's web client.
@@ -250,7 +267,7 @@ pub(crate) async fn forward(
     if has_dot_segments(&rest) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let (server, identity) = match authorize(&state, &user.id, server_id).await {
+    let (server, entry) = match authorize(&state, &user, server_id).await {
         Ok(authorized) => authorized,
         Err(status) => return status.into_response(),
     };
@@ -264,10 +281,10 @@ pub(crate) async fn forward(
     let mount = mount(&state.paths.ui_route(), server_id);
     let url = upstream_url(server.url.as_str(), &rest, query.as_deref(), false);
     let (parts, body) = request.into_parts();
-    let entry = is_web_entry(&parts.method, &rest);
+    let is_start_page = is_web_entry(&parts.method, &rest);
     let mut headers = HeaderMap::new();
     for (name, value) in &parts.headers {
-        if is_dropped_request_header(name) || (entry && is_entry_negotiation_header(name)) {
+        if is_dropped_request_header(name) || (is_start_page && is_entry_negotiation_header(name)) {
             continue;
         }
         headers.append(name.clone(), value.clone());
@@ -290,7 +307,7 @@ pub(crate) async fn forward(
         }
     };
 
-    let rewrite_page = entry
+    let rewrite_page = is_start_page
         && response.status() == StatusCode::OK
         && response
             .headers()
@@ -326,7 +343,7 @@ pub(crate) async fn forward(
             }
         };
         let html = String::from_utf8_lossy(&body);
-        let page = inject_script(&html, &panel_script(&server, &mount, &identity))
+        let page = inject_script(&html, &panel_script(&server, &mount, &entry))
             .unwrap_or_else(|| {
                 warn!(server_id = %server_id, "The backend's start page has no <head>: serving it unchanged");
                 html.into_owned()

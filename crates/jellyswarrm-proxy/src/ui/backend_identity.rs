@@ -54,6 +54,9 @@ impl From<IdentityError> for StatusCode {
 /// one login: a page load asks for dozens of resources at once.
 pub(crate) struct PanelIdentities {
     cache: Cache<(String, i64), Arc<PanelIdentity>>,
+    /// Servers whose first-run setup wizard is still open, by server ID. Short-lived:
+    /// the answer changes the moment the wizard is completed.
+    setup: Cache<i64, bool>,
 }
 
 impl Default for PanelIdentities {
@@ -69,7 +72,35 @@ impl PanelIdentities {
                 .time_to_live(CACHE_TTL)
                 .max_capacity(256)
                 .build(),
+            setup: Cache::builder()
+                .time_to_live(Duration::from_secs(10))
+                .max_capacity(64)
+                .build(),
         }
+    }
+
+    /// Whether the server has never been set up: its first-run wizard is not
+    /// completed, so it has no accounts yet and nothing a mapping could point to.
+    /// An unreachable or unreadable server is not "waiting for setup".
+    pub(crate) async fn setup_pending(&self, state: &ManagementState, server: &Server) -> bool {
+        self.setup
+            .get_with(server.id.as_i64(), async {
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "PascalCase")]
+                struct Public {
+                    startup_wizard_completed: Option<bool>,
+                }
+                let url = format!("{}/System/Info/Public", server.url.as_str().trim_end_matches('/'));
+                let response = match state.reqwest_client.get(url).send().await {
+                    Ok(response) if response.status().is_success() => response,
+                    _ => return false,
+                };
+                matches!(
+                    response.json::<Public>().await,
+                    Ok(Public { startup_wizard_completed: Some(false) })
+                )
+            })
+            .await
     }
 
     /// Forget what is known about a user's account on a server (its mapping changed).

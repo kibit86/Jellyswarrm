@@ -482,3 +482,172 @@ async fn a_backend_that_refuses_the_mapped_account_is_not_opened() {
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     assert!(f.requests_without_admin_lookup(1).await.is_empty());
 }
+
+// ---- First setup: a server that has never been set up has no account to map -------
+
+/// A proxy administrator with no account on any server; returns their UI cookie.
+async fn administrator_without_accounts(f: &Fixture) -> String {
+    let admin = f
+        .state
+        .user_authorization
+        .create_user("root", &"password".into())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET role = 'admin' WHERE id = ?")
+        .bind(&admin.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    ui_login(f, "root", "password").await
+}
+
+async fn wizard_state(f: &Fixture, index: usize, completed: bool) {
+    Mock::given(method("GET"))
+        .and(path("/System/Info/Public"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "ServerName": "fresh", "Id": "fresh-id", "StartupWizardCompleted": completed
+        })))
+        .mount(&f.upstreams[index])
+        .await;
+}
+
+#[tokio::test]
+async fn a_server_never_set_up_opens_for_the_proxy_administrator_without_an_account() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    wizard_state(&f, 1, false).await;
+    mount_start_page(&f, 1).await;
+    Mock::given(method("POST"))
+        .and(path("/Startup/User"))
+        .and(body_string(r#"{"Name":"first","Password":"secret"}"#))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&f.upstreams[1])
+        .await;
+    let cookie = administrator_without_accounts(&f).await;
+    let id = server_id(&f, 1).await;
+
+    let page = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let html = page.text().await.unwrap();
+    assert!(html.contains(&format!("jsw-backend-{id}:")), "storage is still scoped");
+    assert!(html.contains("SEED = null"), "no session is handed over: there is none yet");
+    assert!(!html.contains("AccessToken"));
+
+    // The wizard's own calls go through, unchanged.
+    let created = plain_client()
+        .post(backend(&f, id, "Startup/User"))
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .body(r#"{"Name":"first","Password":"secret"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::NO_CONTENT);
+
+    let sign_ins = f.upstreams[1]
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|request| request.url.path() == "/Users/AuthenticateByName")
+        .count();
+    assert_eq!(sign_ins, 0, "nothing signs in: there is no account yet");
+}
+
+#[tokio::test]
+async fn once_set_up_the_server_closes_again_to_an_administrator_without_an_account() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    wizard_state(&f, 1, true).await;
+    mount_start_page(&f, 1).await;
+    let cookie = administrator_without_accounts(&f).await;
+    let id = server_id(&f, 1).await;
+
+    let response = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(f.requests_without_admin_lookup(1).await.iter().all(|r| r.url.path() == "/System/Info/Public"));
+}
+
+#[tokio::test]
+async fn an_ordinary_user_is_never_let_into_a_first_setup() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    wizard_state(&f, 1, false).await;
+    mount_start_page(&f, 1).await;
+    // bob has no account on any server, and is not the proxy administrator.
+    let cookie = ui_login(&f, "bob", "password").await;
+    let id = server_id(&f, 1).await;
+
+    let response = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn an_unreachable_or_unreadable_server_is_not_a_first_setup() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    Mock::given(method("GET"))
+        .and(path("/System/Info/Public"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&f.upstreams[1])
+        .await;
+    mount_start_page(&f, 1).await;
+    let cookie = administrator_without_accounts(&f).await;
+    let id = server_id(&f, 1).await;
+
+    let response = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn only_the_administrator_is_offered_set_up_and_only_for_a_new_server() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    wizard_state(&f, 0, true).await; // already set up
+    wizard_state(&f, 1, false).await; // brand new
+    let admin = administrator_without_accounts(&f).await;
+    let other = ui_login(&f, "bob", "password").await;
+    let (set_up, configured) = (server_id(&f, 1).await, server_id(&f, 0).await);
+
+    let page = |cookie: String| {
+        let url = format!("{}/ui/user/servers", f.url);
+        async move {
+            plain_client()
+                .get(url)
+                .header("cookie", cookie)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap()
+        }
+    };
+    let for_admin = page(admin).await;
+    assert!(for_admin.contains("Set up"), "{for_admin}");
+    assert!(for_admin.contains(&format!("/ui/backend/{set_up}/web/")));
+    assert!(!for_admin.contains(&format!("/ui/backend/{configured}/web/")));
+    let for_user = page(other).await;
+    assert!(!for_user.contains("Set up"), "an ordinary user is not offered it");
+}
