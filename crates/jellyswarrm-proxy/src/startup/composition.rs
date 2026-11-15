@@ -97,15 +97,20 @@ pub(super) fn adapter_state(
         clients.api.clone(),
         credentials.password(),
     );
+    let admin_rights = Arc::new(application::admin_rights::AdminRights::new());
     let authentication = application::accounts::AuthenticationService {
         user_authorization: user_authorization.clone(),
         server_storage: server_storage.clone(),
         settings: settings.clone(),
         client_sessions: client_sessions.clone(),
         mapping_authenticator: mapping_authenticator.clone(),
+        admin_rights: admin_rights.clone(),
     };
     let management = ManagementState {
         reqwest_client: clients.api.clone(),
+        streaming_client: clients.streaming.clone(),
+        admin_rights: admin_rights.clone(),
+        panel_identities: Arc::new(crate::ui::backend_identity::PanelIdentities::new()),
         user_authorization: user_authorization.clone(),
         server_storage: server_storage.clone(),
         virtual_library_service: virtual_library_service.clone(),
@@ -158,6 +163,7 @@ pub(super) fn adapter_state(
         translation,
         client_sessions,
         catalog_snapshots,
+        admin_rights,
         url_prefix,
     };
     AppState::new(

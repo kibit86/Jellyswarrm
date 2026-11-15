@@ -13,6 +13,7 @@ pub(crate) struct SettingsUpdate {
     pub(crate) include_server_name_in_media: bool,
     pub(crate) auto_create_users_on_login: bool,
     pub(crate) deduplicate_media: bool,
+    pub(crate) autodiscovery: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -80,6 +81,7 @@ impl ConfigurationService {
                 next.include_server_name_in_media = update.include_server_name_in_media;
                 next.auto_create_users_on_login = update.auto_create_users_on_login;
                 next.deduplicate_media = update.deduplicate_media;
+                next.autodiscovery = update.autodiscovery;
             },
             persist,
         )
@@ -151,6 +153,7 @@ mod tests {
             include_server_name_in_media: false,
             auto_create_users_on_login: false,
             deduplicate_media: true,
+            autodiscovery: true,
         }
     }
 

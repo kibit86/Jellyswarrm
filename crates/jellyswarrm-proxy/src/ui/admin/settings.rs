@@ -29,6 +29,7 @@ pub(crate) struct SettingsFormTemplate {
     pub(crate) include_server_name_in_media: bool,
     pub(crate) auto_create_users_on_login: bool,
     pub(crate) deduplicate_media: bool,
+    pub(crate) autodiscovery: bool,
     pub(crate) ui_route: String,
 }
 
@@ -54,6 +55,7 @@ pub(crate) async fn settings_form(State(state): State<SettingsState>) -> impl In
         include_server_name_in_media: cfg.include_server_name_in_media,
         auto_create_users_on_login: cfg.auto_create_users_on_login,
         deduplicate_media: cfg.deduplicate_media,
+        autodiscovery: cfg.autodiscovery,
         ui_route: state.paths.ui_route(),
     };
     match form.render() {
@@ -76,6 +78,8 @@ pub(crate) struct SaveForm {
     pub(crate) auto_create_users_on_login: bool,
     #[serde(default)]
     pub(crate) deduplicate_media: bool,
+    #[serde(default)]
+    pub(crate) autodiscovery: bool,
 }
 
 pub(crate) async fn save_settings(
@@ -90,6 +94,7 @@ pub(crate) async fn save_settings(
             include_server_name_in_media: form.include_server_name_in_media,
             auto_create_users_on_login: form.auto_create_users_on_login,
             deduplicate_media: form.deduplicate_media,
+            autodiscovery: form.autodiscovery,
         })
         .await;
     if let Err(error) = save_result {
@@ -140,6 +145,7 @@ mod tests {
             include_server_name_in_media: false,
             auto_create_users_on_login: true,
             deduplicate_media: true,
+            autodiscovery: true,
             ui_route: "admin".to_string(),
         }
         .render()
@@ -157,6 +163,7 @@ mod tests {
             include_server_name_in_media: false,
             auto_create_users_on_login: true,
             deduplicate_media: true,
+            autodiscovery: true,
             ui_route: "admin".to_string(),
         }
         .render()
@@ -164,5 +171,27 @@ mod tests {
 
         assert!(html.contains("name=\"deduplicate_media\""));
         assert!(html.contains("name=\"deduplicate_media\" value=\"true\" checked"));
+    }
+
+    #[test]
+    fn settings_form_renders_autodiscovery_control() {
+        for (enabled, expected) in [
+            (true, "name=\"autodiscovery\" value=\"true\" checked"),
+            (false, "name=\"autodiscovery\" value=\"true\" >"),
+        ] {
+            let html = SettingsFormTemplate {
+                server_id: "server".to_string(),
+                public_address: "http://localhost:8096".to_string(),
+                server_name: "Jellyswarrm".to_string(),
+                include_server_name_in_media: false,
+                auto_create_users_on_login: true,
+                deduplicate_media: true,
+                autodiscovery: enabled,
+                ui_route: "admin".to_string(),
+            }
+            .render()
+            .unwrap();
+            assert!(html.contains(expected), "{html}");
+        }
     }
 }

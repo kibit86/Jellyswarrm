@@ -1,0 +1,78 @@
+diff --git a/src/components/itemHelper.js b/src/components/itemHelper.js
+index e83d6f0..2eea366 100644
+--- a/src/components/itemHelper.js
++++ b/src/components/itemHelper.js
+@@ -95,6 +95,19 @@ export function supportsAddingToPlaylist(item) {
+     return item.MediaType || item.IsFolder || item.Type === 'Genre' || item.Type === 'MusicGenre' || item.Type === 'MusicArtist';
+ }
+ 
++/**
++ * Whether the viewer may manage this item. Behind Jellyswarrm the proxy tells
++ * us per item (`JellyswarrmCanManage`: the viewer is an administrator on the
++ * server that owns it). Without that field, fall back to the global flag.
++ */
++function canManageItem(user, item) {
++    if (typeof item?.JellyswarrmCanManage === 'boolean') {
++        return item.JellyswarrmCanManage;
++    }
++
++    return !!user?.Policy?.IsAdministrator;
++}
++
+ export function canEdit(user, item) {
+     const itemType = item.Type;
+ 
+@@ -122,7 +135,7 @@ export function canEdit(user, item) {
+         return false;
+     }
+ 
+-    return user.Policy.IsAdministrator;
++    return canManageItem(user, item);
+ }
+ 
+ export function isLocalItem(item) {
+@@ -141,7 +154,7 @@ export function canIdentify (user, item) {
+         || itemType === 'MusicAlbum'
+         || itemType === 'MusicArtist'
+         || itemType === 'MusicVideo')
+-        && user.Policy.IsAdministrator
++        && canManageItem(user, item)
+         && !isLocalItem(item);
+ }
+ 
+@@ -153,7 +166,7 @@ export function canEditImages (user, item) {
+     }
+ 
+     if (itemType === 'UserView') {
+-        return !!user.Policy.IsAdministrator;
++        return canManageItem(user, item);
+     }
+ 
+     if (item.Type === 'Recording' && item.Status !== 'Completed') {
+@@ -205,7 +218,7 @@ export function canEditSubtitles (user, item) {
+         return false;
+     }
+     return user.Policy.EnableSubtitleManagement
+-           || user.Policy.IsAdministrator;
++           || canManageItem(user, item);
+ }
+ 
+ export function canEditLyrics (user, item) {
+@@ -215,7 +228,7 @@ export function canEditLyrics (user, item) {
+     if (isLocalItem(item)) {
+         return false;
+     }
+-    return user.Policy.IsAdministrator;
++    return canManageItem(user, item);
+ }
+ 
+ export function canShare (item, user) {
+@@ -308,7 +321,7 @@ export function canConvert (item, user) {
+ }
+ 
+ export function canRefreshMetadata (item, user) {
+-    if (user.Policy.IsAdministrator) {
++    if (canManageItem(user, item)) {
+         const collectionType = item.CollectionType;
+         if (collectionType === CollectionType.Livetv) {
+             return false;

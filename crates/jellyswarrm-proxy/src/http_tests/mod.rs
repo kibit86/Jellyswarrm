@@ -32,6 +32,8 @@ macro_rules! scenario_test {
 }
 
 mod access;
+mod admin_rights;
+mod backend_passthrough;
 mod bodies;
 mod catalog;
 mod composition;

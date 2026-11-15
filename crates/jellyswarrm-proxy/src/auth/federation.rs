@@ -1,4 +1,8 @@
 //! Coordinate local-user creation and synchronization across configured Jellyfin backends.
+// Federation (creating users on the backends) is switched off in this fork: proxy users are
+// never inferred from backend accounts. The code is kept, unused, in case it is wanted again.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use tracing::{error, info, warn};

@@ -52,8 +52,6 @@ pub(crate) struct UserItemTemplate {
 pub(crate) struct AddUserForm {
     pub(crate) username: String,
     pub(crate) password: Password,
-    #[serde(default)]
-    pub(crate) enable_federation: bool,
 }
 
 #[derive(Deserialize)]
@@ -259,21 +257,10 @@ pub(crate) async fn add_user(
         .await
     {
         Ok(user) => {
-            info!("Created user {}", form.username);
-
-            // Sync to all servers if enabled
-            let report = if form.enable_federation {
-                Some(
-                    state
-                        .federated_users
-                        .sync_user_to_all_servers(&form.username, &form.password, &user.id)
-                        .await,
-                )
-            } else {
-                None
-            };
-
-            get_user_list_impl(&state, report).await.into_response()
+            info!("Created user {}", user.original_username);
+            // Federation is off in this fork: a proxy user is never created on, nor
+            // inferred from, the backends. Its accounts there are mapped explicitly.
+            get_user_list_impl(&state, None).await.into_response()
         }
         Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => (
             StatusCode::CONFLICT,
@@ -291,21 +278,14 @@ pub(crate) async fn add_user(
     }
 }
 
-#[derive(Deserialize)]
-pub(crate) struct DeleteUserForm {
-    #[serde(default)]
-    pub(crate) delete_federated: bool,
-}
-
 /// Delete user
 pub(crate) async fn delete_user(
     State(state): State<ManagementState>,
     Path(user_id): Path<String>,
-    Form(form): Form<DeleteUserForm>,
 ) -> Response {
-    // 1. Get user to get username for remote deletion
-    let username = match state.user_authorization.get_user_by_id(&user_id).await {
-        Ok(Some(u)) => u.original_username,
+    // 1. The user must exist
+    match state.user_authorization.get_user_by_id(&user_id).await {
+        Ok(Some(_)) => {}
         Ok(None) => {
             return (
                 StatusCode::NOT_FOUND,
@@ -323,23 +303,20 @@ pub(crate) async fn delete_user(
         }
     };
 
-    // 2. Delete from federated servers if requested
-    let report = if form.delete_federated {
-        Some(
-            state
-                .federated_users
-                .delete_user_from_all_servers(&username)
-                .await,
+    // 2. The administrator is the way into this interface: it is never deleted here.
+    if matches!(state.user_authorization.is_admin(&user_id).await, Ok(true)) {
+        return (
+            StatusCode::CONFLICT,
+            Html("<div class=\"alert alert-error\">The administrator cannot be deleted</div>"),
         )
-    } else {
-        None
-    };
+            .into_response();
+    }
 
-    // 3. Delete locally
+    // 3. Delete locally (its mappings and sessions go with it; nothing is touched on the backends)
     match state.user_authorization.delete_user(&user_id).await {
         Ok(true) => {
             state.sessions.end_user_sessions(&user_id).await;
-            get_user_list_impl(&state, report).await.into_response()
+            get_user_list_impl(&state, None).await.into_response()
         }
         Ok(false) => (
             StatusCode::NOT_FOUND,
@@ -423,6 +400,11 @@ pub(crate) async fn add_mapping(
         .await
     {
         Ok(_) => {
+            // The check was only a check: close its session on the backend.
+            if let Err(error) = client.logout().await {
+                tracing::debug!(%error, "Could not close the verification session");
+            }
+            state.panel_identities.forget(&form.user_id, &server).await;
             info!(
                 "Mapping credentials validated for local user '{}' on server '{}' as mapped user '{}'.",
                 form.user_id, server.name, form.mapped_username

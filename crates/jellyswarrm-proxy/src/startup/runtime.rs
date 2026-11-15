@@ -4,7 +4,9 @@ use tokio::task::JoinSet;
 use tower_sessions::ExpiredDeletion;
 use tower_sessions_sqlx_store::SqliteStore;
 
-use crate::{auth::quick_connect::QuickConnectStorage, servers::ServerStorageService};
+use crate::{
+    auth::quick_connect::QuickConnectStorage, config::SettingsView, servers::ServerStorageService,
+};
 
 pub(super) struct ApplicationRuntime {
     tasks: JoinSet<()>,
@@ -16,6 +18,7 @@ impl ApplicationRuntime {
         quick_connect: QuickConnectStorage,
         store: SqliteStore,
         health_interval: u64,
+        settings: SettingsView,
     ) -> Self {
         let mut tasks = JoinSet::new();
         tasks.spawn(async move {
@@ -24,6 +27,7 @@ impl ApplicationRuntime {
         tasks.spawn(async move {
             quick_connect.cleanup_loop().await;
         });
+        tasks.spawn(crate::discovery::run(settings));
         tasks.spawn(async move {
             if let Err(error) = store
                 .continuously_delete_expired(std::time::Duration::from_secs(60))

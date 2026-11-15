@@ -55,6 +55,14 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let user_authorization =
         crate::auth::UserAuthorizationService::from_config(pool.clone(), &loaded_config).await?;
 
+    // The management UI's administrator is a real user: create it on the first start.
+    if let Some(admin) = user_authorization
+        .ensure_admin_user(&loaded_config.username, &loaded_config.password)
+        .await?
+    {
+        info!("Management UI administrator is '{}'", admin.original_username);
+    }
+
     // Initialize server storage service
     let server_storage = ServerStorageService::new(pool.clone());
 
@@ -150,11 +158,14 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let session_store = SqliteStore::new(pool.clone());
     session_store.migrate().await?;
 
+    let settings_state: crate::http::state::SettingsState =
+        axum::extract::FromRef::from_ref(&app_state);
     let runtime = super::runtime::ApplicationRuntime::start(
         server_storage,
         axum::extract::FromRef::from_ref(&app_state),
         session_store.clone(),
         startup.server_background_check_interval_secs,
+        settings_state.settings,
     );
 
     // Create socket address

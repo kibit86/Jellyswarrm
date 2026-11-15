@@ -41,7 +41,7 @@ pub(crate) fn build_router(
         .with_expiry(Expiry::OnInactivity(time::Duration::days(1)))
         .with_signed(Key::from(startup.session_key.as_slice()));
     let management = super::state::ManagementState::from_ref(&state);
-    let backend = Backend::new(management.credentials, management.user_authorization);
+    let backend = Backend::new(management.user_authorization);
     let auth_layer = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
     let app = routes()

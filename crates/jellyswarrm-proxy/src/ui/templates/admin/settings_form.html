@@ -19,6 +19,9 @@
     <label>Merge Duplicate Movies & Shows Across Servers
       <input type="checkbox" role="switch" name="deduplicate_media" value="true" {% if deduplicate_media %}checked{% endif %}>
     </label>
+    <label>Answer Network Discovery (UDP 7359)
+      <input type="checkbox" role="switch" name="autodiscovery" value="true" {% if autodiscovery %}checked{% endif %}>
+    </label>
   </fieldset>
   <div style="display:flex; gap:.5rem;">
     <button type="submit">Save</button>

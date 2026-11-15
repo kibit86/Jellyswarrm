@@ -4,7 +4,7 @@ use axum::{
     extract::Path,
     middleware,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{any, get, post},
     Router,
 };
 use axum_login::login_required;
@@ -17,6 +17,8 @@ use crate::{
 };
 
 pub(crate) mod admin;
+pub(crate) mod backend_identity;
+pub(crate) mod backend_passthrough;
 pub(crate) mod auth;
 pub(crate) mod release_status;
 pub(crate) mod root;
@@ -170,6 +172,14 @@ pub(crate) fn ui_routes() -> axum::Router<AppState> {
         .route(
             "/servers/{id}/status",
             get(server_status::check_server_status),
+        )
+        // One backend, unchanged (its own web client and dashboard). Open only
+        // to users who are administrators on that backend.
+        .route("/backend/{server_id}", any(backend_passthrough::root))
+        .route("/backend/{server_id}/", any(backend_passthrough::root))
+        .route(
+            "/backend/{server_id}/{*path}",
+            any(backend_passthrough::forward),
         )
         .merge(admin_routes)
         .route_layer(login_required!(Backend, login_url = "/ui/login"))

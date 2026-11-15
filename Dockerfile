@@ -12,6 +12,9 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 COPY ui/ ./
 COPY .git/modules/ui/ /app/.git/modules/ui/
+# Local patches to the web client (per-item management for administrators).
+COPY patches/jellyfin-web/ /app/patches/jellyfin-web/
+RUN for patch in /app/patches/jellyfin-web/*.patch; do git apply --verbose "$patch" || exit 1; done
 RUN npm run build:production && test -s dist/index.html
 RUN UI_VERSION=$(node -p "require('./package.json').version.replace(/^v/, '')") && \
     UI_COMMIT=$(git rev-parse HEAD) && \

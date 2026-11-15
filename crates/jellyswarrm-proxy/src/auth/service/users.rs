@@ -119,6 +119,42 @@ impl UserAuthorizationService {
         })
     }
 
+    /// Whether the user may use the administrative part of the management UI.
+    pub(crate) async fn is_admin(&self, user_id: &str) -> Result<bool, sqlx::Error> {
+        let role: Option<String> = sqlx::query_scalar("SELECT role FROM users WHERE id = ?")
+            .bind(user_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(role.as_deref() == Some("admin"))
+    }
+
+    /// First start: make sure there is an administrator. When the database has none,
+    /// the user named `username` becomes one: an existing user keeps their
+    /// credential, otherwise the user is created with `password`. Later starts do
+    /// nothing, so the database, not the configuration, owns the password.
+    pub(crate) async fn ensure_admin_user(
+        &self,
+        username: &str,
+        password: &Password,
+    ) -> Result<Option<LocalUser>, sqlx::Error> {
+        let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'admin'")
+            .fetch_one(&self.pool)
+            .await?;
+        if existing > 0 {
+            return Ok(None);
+        }
+        let user = match self.get_user_by_username(username).await? {
+            Some(user) => user,
+            None => self.create_user(username, password).await?,
+        };
+        sqlx::query("UPDATE users SET role = 'admin' WHERE id = ?")
+            .bind(&user.id)
+            .execute(&self.pool)
+            .await?;
+        info!("Management UI administrator ready: {}", user.original_username);
+        Ok(Some(user))
+    }
+
     /// Get user by username (case-insensitive, trimmed)
     pub(crate) async fn get_user_by_username(
         &self,

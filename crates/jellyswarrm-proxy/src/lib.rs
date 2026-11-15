@@ -3,6 +3,7 @@ mod application;
 mod auth;
 mod client_sessions;
 mod config;
+mod discovery;
 mod domain;
 mod http;
 #[cfg(test)]

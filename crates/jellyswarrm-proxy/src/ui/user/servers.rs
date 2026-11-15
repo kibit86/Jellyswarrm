@@ -26,6 +26,14 @@ pub(crate) struct UserServerListTemplate {
     pub(crate) username: String,
     pub(crate) servers: Vec<Server>,
     pub(crate) unmapped_servers: Vec<Server>,
+    /// IDs of the listed servers where the user is an administrator.
+    pub(crate) administrator_ids: Vec<i64>,
+    /// The proxy administrator may open a server that has no mapped account yet, to sign in
+    /// on its own page.
+    pub(crate) is_admin: bool,
+    /// IDs of the listed (not yet connected) servers that were never set up: their
+    /// first-run wizard opens through the proxy ("Set up" instead of "Open").
+    pub(crate) setup_ids: Vec<i64>,
     pub(crate) ui_route: String,
 }
 
@@ -47,7 +55,7 @@ pub(crate) async fn initiate_quick_connect(
     AuthenticatedUser(user): AuthenticatedUser,
     Path(server_id): Path<ServerId>,
 ) -> Result<Json<QuickConnectProgress>, StatusCode> {
-    // Admins do not have a row in the local user table and cannot own mappings.
+    // Only existing proxy users (administrators included) can own mappings.
     if state
         .user_authorization
         .get_user_by_id(&user.id)
@@ -207,10 +215,48 @@ pub(crate) async fn get_user_servers(
         .filter(|s| !mapped_servers.iter().any(|ms| ms.id == s.id))
         .collect();
 
+    // The Administer button is for the servers where the account the user mapped is
+    // an administrator. Signing in to each backend is cached, and one that is down
+    // simply gets no button.
+    let administrator_ids: Vec<i64> = futures_util::future::join_all(
+        mapped_servers.iter().map(|server| async {
+            state
+                .panel_identities
+                .get(&state, &user.id, server)
+                .await
+                .ok()
+                .filter(|identity| identity.is_administrator)
+                .map(|_| server.id.as_i64())
+        }),
+    )
+    .await
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let setup_ids: Vec<i64> = if user.role == crate::ui::auth::UserRole::Admin {
+        futures_util::future::join_all(unmapped_servers.iter().map(|server| async {
+            state
+                .panel_identities
+                .setup_pending(&state, server)
+                .await
+                .then_some(server.id.as_i64())
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect()
+    } else {
+        Vec::new()
+    };
+
     let template = UserServerListTemplate {
         username: user.username,
         servers: mapped_servers,
         unmapped_servers,
+        administrator_ids,
+        is_admin: user.role == crate::ui::auth::UserRole::Admin,
+        setup_ids,
         ui_route: state.paths.ui_route(),
     };
 
@@ -268,7 +314,11 @@ pub(crate) async fn connect_server(
 
     match client.authenticate_by_name(&form.username, form.password.as_str()).await {
         Ok(_) => {
-            // Credentials valid, create mapping
+            // Credentials valid. The check was only a check: close its session.
+            if let Err(error) = client.logout().await {
+                tracing::debug!(%error, "Could not close the verification session");
+            }
+            // Create the mapping
             let mapping_key = user.local_credential.mapping_key();
             match state
                 .user_authorization
@@ -282,6 +332,7 @@ pub(crate) async fn connect_server(
                 .await
             {
                 Ok(_) => {
+                    state.panel_identities.forget(&user.id, &server).await;
                     info!(
                         "Created mapping for user {} to server {}",
                         user.username, server.name
@@ -359,6 +410,7 @@ pub(crate) async fn delete_server_mapping(
             .await
         {
             Ok(_) => {
+                state.panel_identities.forget(&user.id, &server).await;
                 info!(
                     "Deleted mapping for user {} to server {}",
                     user.username, server.name

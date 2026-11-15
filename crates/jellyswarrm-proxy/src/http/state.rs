@@ -109,9 +109,16 @@ pub(crate) struct SettingsState {
 #[derive(Clone)]
 pub(crate) struct ManagementState {
     pub(crate) reqwest_client: reqwest::Client,
+    /// No total timeout: used for the per-server pass-through, whose responses
+    /// (logs, downloads) may legitimately stream for a long time.
+    pub(crate) streaming_client: reqwest::Client,
+    pub(crate) admin_rights: Arc<crate::application::admin_rights::AdminRights>,
+    /// The mapped account the pass-through signs in with, per user and server.
+    pub(crate) panel_identities: Arc<crate::ui::backend_identity::PanelIdentities>,
     pub(crate) user_authorization: Arc<UserAuthorizationService>,
     pub(crate) server_storage: Arc<ServerStorageService>,
     pub(crate) virtual_library_service: Arc<VirtualLibraryService>,
+    #[allow(dead_code)] // federation is off in this fork
     pub(crate) federated_users: Arc<FederatedUserService>,
     pub(crate) quick_connect: QuickConnectStorage,
     pub(crate) credentials: AdminCredentials,

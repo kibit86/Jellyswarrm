@@ -3,16 +3,14 @@
 use super::{AppConfig, DebugUser, MediaStreamingMode, PreconfiguredServer, UrlSegment};
 use crate::domain::security::Password;
 
-/// Immutable, scoped administrator credentials, without configuration mutation.
+/// Immutable, scoped administrator credential (the configured password: the key
+/// protecting data saved before administrators became real users), without
+/// configuration mutation.
 #[derive(Clone)]
 pub(crate) struct AdminCredentials {
-    username: String,
     password: Password,
 }
 impl AdminCredentials {
-    pub(crate) fn username(&self) -> &str {
-        &self.username
-    }
     pub(crate) fn password(&self) -> Password {
         self.password.clone()
     }
@@ -44,6 +42,7 @@ pub(crate) struct RuntimeSettings {
     pub(crate) auto_create_users_on_login: bool,
     pub(crate) merge_libraries: bool,
     pub(crate) deduplicate_media: bool,
+    pub(crate) autodiscovery: bool,
 }
 
 /// Read-only capability for request workflows. No administrator password,
@@ -81,7 +80,6 @@ impl SettingsView {
 impl AppConfig {
     pub(crate) fn admin_credentials(&self) -> AdminCredentials {
         AdminCredentials {
-            username: self.username.clone(),
             password: self.password.clone(),
         }
     }
@@ -111,6 +109,7 @@ impl AppConfig {
             auto_create_users_on_login: self.auto_create_users_on_login,
             merge_libraries: self.merge_libraries,
             deduplicate_media: self.deduplicate_media,
+            autodiscovery: self.autodiscovery,
         }
     }
 
@@ -123,6 +122,7 @@ impl AppConfig {
         self.auto_create_users_on_login = settings.auto_create_users_on_login;
         self.merge_libraries = settings.merge_libraries;
         self.deduplicate_media = settings.deduplicate_media;
+        self.autodiscovery = settings.autodiscovery;
     }
 }
 
@@ -135,16 +135,13 @@ mod tests {
         let config = std::sync::Arc::new(tokio::sync::RwLock::new(AppConfig::default()));
         let credentials = config.read().await.admin_credentials();
         let original_password = credentials.password();
-        let original_username = credentials.username().to_owned();
         let settings = SettingsView::new(config.clone());
         {
             let mut config = config.write().await;
             config.password = "different test password".into();
-            config.username = "different admin".into();
             config.server_name = "published name".into();
         }
         assert_eq!(credentials.password(), original_password);
-        assert_eq!(credentials.username(), original_username);
         assert_eq!(settings.read().await.server_name, "published name");
     }
 

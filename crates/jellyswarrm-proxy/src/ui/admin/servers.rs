@@ -22,6 +22,7 @@ pub(crate) struct ServersPageTemplate {
 
 pub(crate) struct ServerWithAdmin {
     pub(crate) server: Server,
+    #[allow(dead_code)] // federation is off in this fork
     pub(crate) has_admin: bool,
     pub(crate) is_redirect: bool,
     pub(crate) is_proxy: bool,
