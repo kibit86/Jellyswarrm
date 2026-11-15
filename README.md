@@ -1,3 +1,6 @@
+> [!NOTE]
+> **This is a vibe-coded, private fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), kept for one homelab. With an AI coding assistant (Claude) it adds a few things on top of upstream v1.0.0: media management on the backends where the signed-in user is an administrator (see [docs/administration.md](docs/administration.md)), opening a single backend's own web client and dashboard through the proxy, and answering Jellyfin LAN discovery (UDP 7359) like a Jellyfin server does. Images are published privately as `ghcr.io/kibit86/jellyswarrm`. Everything else is upstream's work. Use at your own risk, with no support: the original project remains the reference, and problems found in this fork should not be reported to upstream.
+
 <h1 align="center">Jellyswarrm</h1>
 
 <h3 align="center">Many servers. Single experience.</h3>
@@ -45,11 +48,13 @@ Jellyswarrm is a reverse proxy that lets you combine multiple Jellyfin servers i
 * **User Page** – Personal dashboard for managing credentials and libraries. 
 * **QuickConnect** – Sign in on one device by approving the code from another authenticated device.
 * **Websocket Support** – Needed for real-time features like SyncPlay 
+* **Per-Backend Administration** *(this fork)* – Item editing, refresh and deletion only where your linked account is an administrator, and a pass-through to one backend's own dashboard ([details](docs/administration.md)).
+* **Network Discovery** *(this fork)* – Jellyfin apps on the LAN find the proxy automatically (UDP 7359); can be switched off.
 
 
 ### ⚠️ In Progress
 * **Automatic Bitrate Adjustment** – Stream quality based on network conditions isn’t supported yet.
-* **Media Management** – Features like adding or deleting media libraries through Jellyswarrm are not implemented yet.
+* **Media Management** – Adding or deleting *libraries* through Jellyswarrm is not implemented (item editing and deletion are, in this fork, where you are an administrator).
 
 ---
 
