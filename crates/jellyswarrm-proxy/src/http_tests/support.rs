@@ -263,8 +263,9 @@ impl Fixture {
             .await;
     }
 
-    /// Requests a backend received, without the proxy's administrator lookups
-    /// (`GET /Users/backend-user-*`).
+    /// Requests a backend received, without the proxy's own bookkeeping calls: the
+    /// administrator lookups (`GET /Users/backend-user-*`) and the sign-in with the
+    /// mapped account (`POST /Users/AuthenticateByName`).
     pub(crate) async fn requests_without_admin_lookup(
         &self,
         index: usize,
@@ -274,7 +275,10 @@ impl Fixture {
             .await
             .unwrap()
             .into_iter()
-            .filter(|request| !request.url.path().starts_with("/Users/backend-user-"))
+            .filter(|request| {
+                !request.url.path().starts_with("/Users/backend-user-")
+                    && request.url.path() != "/Users/AuthenticateByName"
+            })
             .collect()
     }
 

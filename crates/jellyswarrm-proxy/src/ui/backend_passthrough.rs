@@ -479,6 +479,45 @@ mod tests {
     }
 
     #[test]
+    fn only_the_web_clients_start_page_is_rewritten() {
+        let get = Method::GET;
+        for rest in ["web", "web/", "web/index.html"] {
+            assert!(is_web_entry(&get, rest), "{rest}");
+        }
+        for rest in ["web/main.bundle.js", "web/index.html.map", "System/Info", "", "web/sub/index.html"] {
+            assert!(!is_web_entry(&get, rest), "{rest}");
+        }
+        assert!(!is_web_entry(&Method::POST, "web/"));
+        assert!(is_entry_negotiation_header(&HeaderName::from_static("accept-encoding")));
+        assert!(is_entry_negotiation_header(&HeaderName::from_static("if-none-match")));
+        assert!(!is_entry_negotiation_header(&header::AUTHORIZATION));
+    }
+
+    #[test]
+    fn the_script_goes_first_in_head_whatever_its_case_or_attributes() {
+        for html in [
+            "<html><head><title>x</title></head></html>",
+            "<HTML><HEAD lang=\"en\"><title>x</title></HEAD></HTML>",
+        ] {
+            let page = inject_script(html, "RUN()").expect("has a <head>");
+            let head_end = page.find('>').unwrap();
+            assert!(page.contains("<script>RUN()</script>"), "{page}");
+            assert!(page.find("<script>").unwrap() > page.to_ascii_lowercase().find("<head").unwrap());
+            assert!(page.find("<script>").unwrap() < page.find("<title>").unwrap(), "before everything else");
+            assert!(page.len() > html.len() && head_end > 0);
+        }
+        assert!(inject_script("<html><body>no head</body></html>", "RUN()").is_none());
+    }
+
+    #[test]
+    fn inline_json_cannot_close_the_script_element() {
+        let text = json_for_script(&"</script><script>alert(1)</script>");
+        assert!(!text.contains('<'), "{text}");
+        let value: String = serde_json::from_str(&text).unwrap();
+        assert_eq!(value, "</script><script>alert(1)</script>");
+    }
+
+    #[test]
     fn cookies_never_cross_the_proxy() {
         assert!(is_dropped_request_header(&header::COOKIE));
         assert!(is_dropped_request_header(&header::HOST));

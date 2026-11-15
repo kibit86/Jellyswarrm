@@ -47,6 +47,20 @@ async fn server_id(f: &Fixture, index: usize) -> i64 {
         .as_i64()
 }
 
+/// The backend accepts the mapped account `alice` and says whether it administers it.
+async fn backend_login(f: &Fixture, index: usize, administrator: bool) {
+    Mock::given(method("POST"))
+        .and(path("/Users/AuthenticateByName"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "User": {"Id": format!("backend-user-{index}"), "Name": "alice", "ServerId": format!("backend-{index}"),
+                     "Policy": {"IsAdministrator": administrator, "SyncPlayAccess": "None"}},
+            "AccessToken": format!("panel-token-{index}"), "ServerId": format!("backend-{index}"),
+            "SessionInfo": {"UserId": format!("backend-user-{index}"), "UserName": "alice", "ServerId": format!("backend-{index}")}
+        })))
+        .mount(&f.upstreams[index])
+        .await;
+}
+
 fn backend(f: &Fixture, id: i64, rest: &str) -> String {
     format!("{}/ui/backend/{id}/{rest}", f.url)
 }
@@ -72,8 +86,8 @@ async fn signed_out_visitors_never_reach_a_backend() {
 async fn only_administrators_of_that_backend_get_in() {
     let f = Fixture::for_scenario(Scenario::NormalServers).await;
     f.healthy().await;
-    f.administrator_on(0, false).await;
-    f.administrator_on(1, true).await;
+    backend_login(&f, 0, false).await;
+    backend_login(&f, 1, true).await;
     for index in 0..2 {
         Mock::given(method("GET"))
             .and(path("/web/index.html"))
@@ -125,7 +139,7 @@ async fn only_administrators_of_that_backend_get_in() {
 async fn requests_and_responses_pass_unchanged_except_cookies_and_redirects() {
     let f = Fixture::for_scenario(Scenario::NormalServers).await;
     f.healthy().await;
-    f.administrator_on(1, true).await;
+    backend_login(&f, 1, true).await;
     let backend_mock = &f.upstreams[1];
     Mock::given(method("POST"))
         .and(path("/Items/some-item"))
@@ -218,25 +232,70 @@ async fn requests_and_responses_pass_unchanged_except_cookies_and_redirects() {
     assert_eq!(info["Id"], "real-server-id");
 }
 
+/// A backend that answers the panel's HTTP sign-in and speaks WebSocket (echo, with a
+/// greeting) on one port.
+async fn http_and_websocket_backend() -> std::net::SocketAddr {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            tokio::spawn(async move {
+                let mut head = [0u8; 4];
+                stream.peek(&mut head).await.unwrap();
+                if &head == b"POST" {
+                    // Read the whole sign-in request, then answer it.
+                    let mut request = Vec::new();
+                    let mut chunk = [0u8; 1024];
+                    loop {
+                        let n = stream.read(&mut chunk).await.unwrap();
+                        request.extend_from_slice(&chunk[..n]);
+                        let text = String::from_utf8_lossy(&request).to_lowercase();
+                        if let Some(end) = text.find("\r\n\r\n") {
+                            let length = text
+                                .lines()
+                                .find_map(|l| l.strip_prefix("content-length:"))
+                                .and_then(|v| v.trim().parse::<usize>().ok())
+                                .unwrap_or(0);
+                            if request.len() >= end + 4 + length || n == 0 {
+                                break;
+                            }
+                        }
+                    }
+                    let body = json!({
+                        "User": {"Id": "ws-user", "Name": "alice", "ServerId": "ws-backend",
+                                 "Policy": {"IsAdministrator": true, "SyncPlayAccess": "None"}},
+                        "AccessToken": "ws-token", "ServerId": "ws-backend",
+                        "SessionInfo": {"UserId": "ws-user", "UserName": "alice", "ServerId": "ws-backend"}
+                    })
+                    .to_string();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                    return;
+                }
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                socket.send(Message::text("hello from backend")).await.unwrap();
+                while let Some(Ok(message)) = socket.next().await {
+                    if message.is_text() {
+                        socket.send(message).await.unwrap();
+                    } else if message.is_close() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    addr
+}
+
 #[tokio::test]
 async fn websocket_is_relayed_both_ways() {
     let f = Fixture::for_scenario(Scenario::NormalServers).await;
-
-    // A backend that only speaks WebSocket (echo, with a greeting).
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let backend_addr = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
-        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-        socket.send(Message::text("hello from backend")).await.unwrap();
-        while let Some(Ok(message)) = socket.next().await {
-            if message.is_text() {
-                socket.send(message).await.unwrap();
-            } else if message.is_close() {
-                break;
-            }
-        }
-    });
+    let backend_addr = http_and_websocket_backend().await;
 
     let server = {
         let id = f
@@ -262,32 +321,6 @@ async fn websocket_is_relayed_both_ways() {
         .add_server_mapping(&f.user.id, &server, "alice", &"password".into(), None)
         .await
         .unwrap();
-    let authorization = Authorization {
-        client: "Test".into(),
-        device: "Device ws".into(),
-        device_id: "ws".into(),
-        version: "1".into(),
-        token: None,
-    };
-    f.state
-        .user_authorization
-        .store_authorization_session(
-            &f.user.id,
-            &server,
-            &authorization,
-            "ws-backend-token".into(),
-            "ws-backend-user".into(),
-            None,
-        )
-        .await
-        .unwrap();
-    // The backend is not an HTTP server here, so state that the user is an
-    // administrator on it the way a backend login would.
-    f.state
-        .services
-        .admin_rights
-        .record("ws-backend-token", true)
-        .await;
 
     let cookie = ui_login(&f, "alice", "password").await;
     let url = format!(
@@ -315,4 +348,137 @@ async fn websocket_without_a_session_is_refused() {
         f.url.trim_start_matches("http://")
     );
     assert!(tokio_tungstenite::connect_async(url).await.is_err());
+}
+
+const START_PAGE: &str =
+    "<!doctype html><html><head><title>Jellyfin</title></head><body>app</body></html>";
+
+async fn mount_start_page(f: &Fixture, index: usize) {
+    Mock::given(method("GET"))
+        .and(path("/web/"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("etag", "\"upstream-etag\"")
+                .insert_header("cache-control", "max-age=3600")
+                .set_body_raw(START_PAGE, "text/html"),
+        )
+        .mount(&f.upstreams[index])
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/web/main.bundle.js"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw("console.log(1)", "text/javascript"),
+        )
+        .mount(&f.upstreams[index])
+        .await;
+}
+
+#[tokio::test]
+async fn the_start_page_gets_its_own_storage_and_the_signed_in_session() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    backend_login(&f, 1, true).await;
+    mount_start_page(&f, 1).await;
+    let cookie = ui_login(&f, "alice", "password").await;
+    let id = server_id(&f, 1).await;
+
+    let page = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        // What a browser sends: the page must still come back editable and fresh.
+        .header("accept-encoding", "gzip, br")
+        .header("if-none-match", "\"upstream-etag\"")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    assert_eq!(page.headers()["cache-control"], "no-store");
+    assert!(page.headers().get("etag").is_none(), "the page depends on who asks");
+    let declared_length: usize = page.headers()["content-length"].to_str().unwrap().parse().unwrap();
+    let html = page.text().await.unwrap();
+    assert_eq!(declared_length, html.len());
+    assert!(html.contains("<head><script>"), "the script comes first in <head>: {html}");
+    assert!(html.contains(&format!("jsw-backend-{id}:")), "storage is scoped per backend");
+    assert!(html.contains("panel-token-1"), "the session of the mapped account is handed over");
+    assert!(html.contains("\"Id\":\"backend-1\""), "stored under the backend's own server ID");
+    assert!(html.contains("\"UserId\":\"backend-user-1\""));
+    assert!(html.contains("<title>Jellyfin</title>") && html.contains("<body>app</body>"));
+    assert!(!html.contains("alicepw") && !html.contains("\"password\""), "no password reaches the browser");
+
+    let upstream_page: Vec<_> = f
+        .requests_without_admin_lookup(1)
+        .await
+        .into_iter()
+        .filter(|request| request.url.path() == "/web/")
+        .collect();
+    assert_eq!(upstream_page.len(), 1);
+    // The browser's own negotiation is not forwarded: the proxy's HTTP client asks for
+    // (and transparently decodes) its own encoding, so the page arrives editable.
+    assert_ne!(
+        upstream_page[0].headers.get("accept-encoding").map(|v| v.to_str().unwrap()),
+        Some("gzip, br")
+    );
+    assert!(upstream_page[0].headers.get("if-none-match").is_none());
+
+    // Everything else is passed through untouched.
+    let asset = plain_client()
+        .get(backend(&f, id, "web/main.bundle.js"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(asset.headers()["content-type"], "text/javascript");
+    assert_eq!(asset.text().await.unwrap(), "console.log(1)");
+}
+
+#[tokio::test]
+async fn one_sign_in_serves_a_whole_page_load() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    backend_login(&f, 1, true).await;
+    mount_start_page(&f, 1).await;
+    let cookie = ui_login(&f, "alice", "password").await;
+    let id = server_id(&f, 1).await;
+
+    let loads = (0..6).map(|i| {
+        let rest = if i == 0 { "web/" } else { "web/main.bundle.js" };
+        plain_client()
+            .get(backend(&f, id, rest))
+            .header("cookie", &cookie)
+            .send()
+    });
+    for response in futures_util::future::join_all(loads).await {
+        assert_eq!(response.unwrap().status(), StatusCode::OK);
+    }
+    let sign_ins = f.upstreams[1]
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|request| request.url.path() == "/Users/AuthenticateByName")
+        .count();
+    assert_eq!(sign_ins, 1, "concurrent requests share one backend sign-in");
+}
+
+#[tokio::test]
+async fn a_backend_that_refuses_the_mapped_account_is_not_opened() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    Mock::given(method("POST"))
+        .and(path("/Users/AuthenticateByName"))
+        .respond_with(ResponseTemplate::new(401))
+        .mount(&f.upstreams[1])
+        .await;
+    mount_start_page(&f, 1).await;
+    let cookie = ui_login(&f, "alice", "password").await;
+    let id = server_id(&f, 1).await;
+
+    let response = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert!(f.requests_without_admin_lookup(1).await.is_empty());
 }
