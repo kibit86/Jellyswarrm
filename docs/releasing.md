@@ -8,8 +8,8 @@ release is just a pull request that raises the version.
 | Event | What happens |
 |---|---|
 | Commit on a branch | Nothing. |
-| Pull request to `main` | The checks (clippy, fmt, tests, advisories, Docker and browser integration tests), then an image build that is **not** published. |
-| Push (merge) to `main` | The same checks. Only if **all** are green, the image is published as `edge` and `sha-<commit>`. |
+| Pull request to `main` | The checks only (`ci.yml`: clippy, fmt, tests, advisories, Docker and browser integration tests). No image is built. |
+| Push (merge) to `main` | `release.yml`, **without tests** (they ran on the PR): the image is published as `edge` and `sha-<commit>`. `main` is protected, so only a PR with green, up-to-date checks gets here. |
 | Push to `main` with a **new version** in `Cargo.toml` | The same, plus a **release**: the image is also published as `X.Y.Z`, `X.Y`, `X` and `latest`, then the tag `vX.Y.Z` and the GitHub Release are created on that commit. |
 
 Tags are never pushed by hand and no workflow runs on a tag: a tag only comes out of `main`,
@@ -24,7 +24,7 @@ after the images exist. A failing CI publishes nothing and creates no tag.
 
 A merge that does not change the version only publishes `edge`.
 
-## Safeguards (job `version` in `.github/workflows/ci.yml`)
+## Safeguards (job `version` in `.github/workflows/release.yml`)
 
 - The version must be `X.Y.Z` (no suffix).
 - A version that is **lower** than the latest existing tag fails the run instead of being skipped.

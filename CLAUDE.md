@@ -31,12 +31,15 @@ anyone — human or agent — who changes the code or ships a release.
 | Event | What runs |
 |---|---|
 | Commit on a branch | Nothing. |
-| Pull request to `main` | `ci.yml`: the checks below, then the image build for amd64+arm64 **without publishing**. |
-| Push (merge) to `main` | `ci.yml`: the same checks; only if **all** are green the image is published as `edge` and `sha-<commit>`. |
+| Pull request to `main` | `ci.yml`: the checks below. **No image is built.** |
+| Push (merge) to `main` | `release.yml`: **no tests** (they ran on the PR); builds and publishes the image as `edge` and `sha-<commit>`. |
 | Push to `main` with a version in `Cargo.toml` that has **no tag yet** | The same, plus a **release**: the image is also published as `X.Y.Z`, `X.Y`, `X`, `latest`; then the tag `vX.Y.Z` and the GitHub Release are created on that commit (last step, so a tag only exists if all images do). |
 
-Everything is a single workflow, `.github/workflows/ci.yml` (jobs `build`, `dependencies`, `integration`, then `version`,
-`build-and-push`, `create-manifest`; publishing `needs:` all the checks). Safeguards (job `version`): the version must be exactly `X.Y.Z`; a version **lower** than the
+Two workflows with one job each way: `.github/workflows/ci.yml` (PR only: `build`, `dependencies`, `integration`) and
+`.github/workflows/release.yml` (push to `main` only: `version`, `build-and-push`, `create-manifest`). Because the merge
+does not re-run the tests, **`main` is protected**: only a PR with green, up-to-date checks `build`,
+`Dependency advisories and licenses` and `Docker integration test` can be merged; never push to `main` to get around it
+(a Dockerfile problem is found at merge time and publishes nothing). Safeguards in `release.yml` (job `version`): the version must be exactly `X.Y.Z`; a version **lower** than the
 latest tag fails the run; if the tag already exists the run is a snapshot only (re-running is safe); one run per
 branch at a time (`concurrency`), so two quick merges cannot race for the same tag. A failing CI publishes
 nothing and creates no tag.
@@ -71,7 +74,7 @@ that cannot be undone). The fork follows its own numbering, independent of upstr
 
 ## What CI checks (`ci.yml`)
 
-Runs on every PR and on every push to `main`. All of it must pass before anything is published.
+Runs on every PR (`ci.yml`), not on the push to `main`. All of it must be green to merge.
 
 | Job | Commands |
 |---|---|
