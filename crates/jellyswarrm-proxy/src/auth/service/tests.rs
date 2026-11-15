@@ -2348,3 +2348,75 @@ async fn test_add_server_mapping_password_change_deletes_sessions() {
         .1;
     assert_eq!(sessions_after.len(), 0);
 }
+
+#[tokio::test]
+async fn first_start_creates_the_administrator_and_later_starts_leave_it_alone() {
+    let (_, service) = setup_service().await;
+    let admin = service
+        .ensure_admin_user("owner", &"first-password".into())
+        .await
+        .unwrap()
+        .expect("a fresh database gets an administrator");
+    assert!(service.is_admin(&admin.id).await.unwrap());
+    assert!(admin.local_credential.verify_async(&"first-password".into()).await.unwrap());
+
+    // The database owns the password from now on: a different configured one does nothing.
+    assert!(service
+        .ensure_admin_user("owner", &"changed-in-config".into())
+        .await
+        .unwrap()
+        .is_none());
+    assert!(service
+        .get_user_by_credentials("owner", &"first-password".into())
+        .await
+        .unwrap()
+        .is_some());
+    assert!(service
+        .get_user_by_credentials("owner", &"changed-in-config".into())
+        .await
+        .unwrap()
+        .is_none());
+
+    // Not even another name creates a second administrator.
+    assert!(service
+        .ensure_admin_user("someone-else", &"x".into())
+        .await
+        .unwrap()
+        .is_none());
+    assert!(service
+        .get_user_by_username("someone-else")
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn an_existing_user_is_promoted_with_their_own_password() {
+    let (_, service) = setup_service().await;
+    let existing = service
+        .create_user("owner", &"their-password".into())
+        .await
+        .unwrap();
+    assert!(!service.is_admin(&existing.id).await.unwrap());
+
+    let promoted = service
+        .ensure_admin_user("owner", &"configured-password".into())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(promoted.id, existing.id);
+    assert!(service.is_admin(&existing.id).await.unwrap());
+    assert!(service
+        .get_user_by_credentials("owner", &"their-password".into())
+        .await
+        .unwrap()
+        .is_some());
+}
+
+#[tokio::test]
+async fn ordinary_and_unknown_users_are_not_administrators() {
+    let (_, service) = setup_service().await;
+    let viewer = service.create_user("viewer", &"pw".into()).await.unwrap();
+    assert!(!service.is_admin(&viewer.id).await.unwrap());
+    assert!(!service.is_admin("no-such-user").await.unwrap());
+}

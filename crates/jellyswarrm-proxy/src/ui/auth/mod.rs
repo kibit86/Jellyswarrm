@@ -11,10 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task;
 use tracing::info;
 
-use crate::{
-    auth::service::{LocalCredential, UserAuthorizationService},
-    config::AdminCredentials,
-};
+use crate::auth::service::{LocalCredential, UserAuthorizationService};
 
 mod routes;
 
@@ -90,19 +87,12 @@ pub(crate) struct Credentials {
 
 #[derive(Clone)]
 pub(crate) struct Backend {
-    credentials: AdminCredentials,
     user_auth: Arc<UserAuthorizationService>,
 }
 
 impl Backend {
-    pub(crate) fn new(
-        credentials: AdminCredentials,
-        user_auth: Arc<UserAuthorizationService>,
-    ) -> Self {
-        Self {
-            credentials,
-            user_auth,
-        }
+    pub(crate) fn new(user_auth: Arc<UserAuthorizationService>) -> Self {
+        Self { user_auth }
     }
 }
 
@@ -125,32 +115,13 @@ impl AuthnBackend for Backend {
     ) -> Result<Option<Self::User>, Self::Error> {
         let password = creds.password.into();
         info!("Authenticating user: {}", creds.username);
-        if creds.username == self.credentials.username() && password == self.credentials.password()
-        {
-            info!("Admin authentication successful");
-            // If the password is correct, we return the default user.
-            let user = UiUser {
-                id: "admin".into(),
-                username: creds.username,
-                local_credential: LocalCredential::Password(self.credentials.password().into()),
-                role: UserRole::Admin,
-            };
-            return Ok(Some(user));
-        }
-
         if let Some(user) = self
             .user_auth
             .get_user_by_credentials(&creds.username, &password)
             .await?
         {
             info!("User authentication successful: {}", user.original_username);
-            let user = UiUser {
-                id: user.id,
-                username: user.original_username,
-                local_credential: user.local_credential,
-                role: UserRole::User,
-            };
-            return Ok(Some(user));
+            return Ok(Some(self.ui_user(user).await?));
         }
 
         info!("Authentication failed for user: {}", creds.username);
@@ -161,26 +132,28 @@ impl AuthnBackend for Backend {
         &self,
         user_id: &AuthUserId<Self>,
     ) -> Result<Option<Self::User>, Self::Error> {
-        if user_id.as_str() == "admin" {
-            return Ok(Some(UiUser {
-                id: "admin".into(),
-                username: self.credentials.username().to_owned(),
-                local_credential: LocalCredential::Password(self.credentials.password().into()),
-                role: UserRole::Admin,
-            }));
+        match self.user_auth.get_user_by_id(user_id).await? {
+            Some(user) => Ok(Some(self.ui_user(user).await?)),
+            None => Ok(None),
         }
+    }
+}
 
-        if let Some(user) = self.user_auth.get_user_by_id(user_id).await? {
-            let user = UiUser {
-                id: user.id,
-                username: user.original_username,
-                local_credential: user.local_credential,
-                role: UserRole::User,
-            };
-            return Ok(Some(user));
-        }
-
-        Ok(None)
+impl Backend {
+    /// The role is read from the database every time, so promoting or demoting a
+    /// user applies to the session they already have.
+    async fn ui_user(&self, user: crate::auth::service::LocalUser) -> Result<UiUser, Error> {
+        let role = if self.user_auth.is_admin(&user.id).await? {
+            UserRole::Admin
+        } else {
+            UserRole::User
+        };
+        Ok(UiUser {
+            id: user.id,
+            username: user.original_username,
+            local_credential: user.local_credential,
+            role,
+        })
     }
 }
 

@@ -110,8 +110,10 @@ fn default_server_background_check_interval_secs() -> u64 {
     30
 }
 
+/// Off by default: proxy accounts are created by the administrator and mapped to
+/// backend accounts, never inferred from a backend login.
 fn default_auto_create_users_on_login() -> bool {
-    true
+    false
 }
 
 fn default_merge_libraries() -> bool {

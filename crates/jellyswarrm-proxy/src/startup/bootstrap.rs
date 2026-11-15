@@ -54,6 +54,14 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let user_authorization =
         crate::auth::UserAuthorizationService::from_config(pool.clone(), &loaded_config).await?;
 
+    // The management UI's administrator is a real user: create it on the first start.
+    if let Some(admin) = user_authorization
+        .ensure_admin_user(&loaded_config.username, &loaded_config.password)
+        .await?
+    {
+        info!("Management UI administrator is '{}'", admin.original_username);
+    }
+
     // Initialize server storage service
     let server_storage = ServerStorageService::new(pool.clone());
 

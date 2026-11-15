@@ -49,7 +49,7 @@ pub(crate) async fn initiate_quick_connect(
     AuthenticatedUser(user): AuthenticatedUser,
     Path(server_id): Path<ServerId>,
 ) -> Result<Json<QuickConnectProgress>, StatusCode> {
-    // Admins do not have a row in the local user table and cannot own mappings.
+    // Only existing proxy users (administrators included) can own mappings.
     if state
         .user_authorization
         .get_user_by_id(&user.id)
@@ -289,7 +289,11 @@ pub(crate) async fn connect_server(
 
     match client.authenticate_by_name(&form.username, form.password.as_str()).await {
         Ok(_) => {
-            // Credentials valid, create mapping
+            // Credentials valid. The check was only a check: close its session.
+            if let Err(error) = client.logout().await {
+                tracing::debug!(%error, "Could not close the verification session");
+            }
+            // Create the mapping
             let mapping_key = user.local_credential.mapping_key();
             match state
                 .user_authorization

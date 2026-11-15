@@ -423,6 +423,10 @@ pub(crate) async fn add_mapping(
         .await
     {
         Ok(_) => {
+            // The check was only a check: close its session on the backend.
+            if let Err(error) = client.logout().await {
+                tracing::debug!(%error, "Could not close the verification session");
+            }
             info!(
                 "Mapping credentials validated for local user '{}' on server '{}' as mapped user '{}'.",
                 form.user_id, server.name, form.mapped_username
