@@ -60,7 +60,10 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ensure_admin_user(&loaded_config.username, &loaded_config.password)
         .await?
     {
-        info!("Management UI administrator is '{}'", admin.original_username);
+        info!(
+            "Management UI administrator is '{}'",
+            admin.original_username
+        );
     }
 
     // Initialize server storage service

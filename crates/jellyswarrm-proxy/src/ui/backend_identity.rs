@@ -95,14 +95,19 @@ impl PanelIdentities {
                 struct Public {
                     startup_wizard_completed: Option<bool>,
                 }
-                let url = format!("{}/System/Info/Public", server.url.as_str().trim_end_matches('/'));
+                let url = format!(
+                    "{}/System/Info/Public",
+                    server.url.as_str().trim_end_matches('/')
+                );
                 let response = match state.reqwest_client.get(url).send().await {
                     Ok(response) if response.status().is_success() => response,
                     _ => return false,
                 };
                 matches!(
                     response.json::<Public>().await,
-                    Ok(Public { startup_wizard_completed: Some(false) })
+                    Ok(Public {
+                        startup_wizard_completed: Some(false)
+                    })
                 )
             })
             .await

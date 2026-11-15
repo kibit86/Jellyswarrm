@@ -31,9 +31,9 @@ pub(crate) const CAN_MANAGE_FIELD: &str = "JellyswarrmCanManage";
 /// Returns whether anything was added.
 pub(crate) fn annotate_can_manage(value: &mut serde_json::Value, can_manage: bool) -> bool {
     match value {
-        serde_json::Value::Array(items) => items
-            .iter_mut()
-            .fold(false, |added, item| annotate_can_manage(item, can_manage) | added),
+        serde_json::Value::Array(items) => items.iter_mut().fold(false, |added, item| {
+            annotate_can_manage(item, can_manage) | added
+        }),
         serde_json::Value::Object(map) => {
             let is_item = map.get("Id").is_some_and(serde_json::Value::is_string)
                 && map.get("Type").is_some_and(serde_json::Value::is_string);
@@ -44,7 +44,9 @@ pub(crate) fn annotate_can_manage(value: &mut serde_json::Value, can_manage: boo
             }
             map.iter_mut()
                 .filter(|(key, _)| key.as_str() != CAN_MANAGE_FIELD)
-                .fold(added, |added, (_, child)| annotate_can_manage(child, can_manage) | added)
+                .fold(added, |added, (_, child)| {
+                    annotate_can_manage(child, can_manage) | added
+                })
         }
         _ => false,
     }
@@ -72,7 +74,9 @@ pub(crate) enum AdminRequestClass {
 
 /// Classify a request by method and path (URL prefix already removed).
 pub(crate) fn classify_request(method: &Method, path: &str) -> AdminRequestClass {
-    let decoded = percent_decode_str(path).decode_utf8_lossy().to_ascii_lowercase();
+    let decoded = percent_decode_str(path)
+        .decode_utf8_lossy()
+        .to_ascii_lowercase();
     let segments: Vec<&str> = decoded.split('/').filter(|part| !part.is_empty()).collect();
     let read_only = matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS);
     let Some(first) = segments.first().copied() else {
@@ -121,15 +125,13 @@ pub(crate) fn classify_request(method: &Method, path: &str) -> AdminRequestClass
             }
             _ => AdminRequestClass::Regular,
         },
-        "scheduledtasks" | "plugins" | "packages" | "repositories" | "startup"
-        | "environment" | "devices" => AdminRequestClass::GlobalAdministration,
+        "scheduledtasks" | "plugins" | "packages" | "repositories" | "startup" | "environment"
+        | "devices" => AdminRequestClass::GlobalAdministration,
         "notifications" if second == Some("admin") => AdminRequestClass::GlobalAdministration,
         "users" => match (second, third) {
             (Some("new"), _) if !read_only => AdminRequestClass::GlobalAdministration,
             (Some(_), Some("policy")) if !read_only => AdminRequestClass::GlobalAdministration,
-            (Some(_), None) if *method == Method::DELETE => {
-                AdminRequestClass::GlobalAdministration
-            }
+            (Some(_), None) if *method == Method::DELETE => AdminRequestClass::GlobalAdministration,
             _ => AdminRequestClass::Regular,
         },
         _ => AdminRequestClass::Regular,
@@ -295,7 +297,9 @@ mod tests {
         assert_eq!(page["Items"][0][CAN_MANAGE_FIELD], true);
         assert_eq!(page["Items"][1][CAN_MANAGE_FIELD], true);
         // A person has an Id but no Type: not an item.
-        assert!(page["Items"][0]["People"][0].get(CAN_MANAGE_FIELD).is_none());
+        assert!(page["Items"][0]["People"][0]
+            .get(CAN_MANAGE_FIELD)
+            .is_none());
         assert!(page.get(CAN_MANAGE_FIELD).is_none());
 
         let mut none = serde_json::json!({"Name": "no items here"});
@@ -314,12 +318,30 @@ mod tests {
         assert_eq!(class(Method::POST, "/Items/abc"), ItemWrite);
         assert_eq!(class(Method::DELETE, "/Items/abc"), ItemWrite);
         assert_eq!(class(Method::POST, "/items/abc/Refresh"), ItemManagement);
-        assert_eq!(class(Method::POST, "/Items/abc/Images/Primary"), ItemManagement);
-        assert_eq!(class(Method::DELETE, "/Items/abc/Images/Backdrop/0"), ItemManagement);
-        assert_eq!(class(Method::GET, "/Items/abc/MetadataEditor"), ItemManagement);
-        assert_eq!(class(Method::POST, "/Items/RemoteSearch/Apply/abc"), ItemManagement);
-        assert_eq!(class(Method::POST, "/Items/RemoteSearch/Movie"), ItemManagement);
-        assert_eq!(class(Method::POST, "/Videos/abc/Subtitles/1"), ItemManagement);
+        assert_eq!(
+            class(Method::POST, "/Items/abc/Images/Primary"),
+            ItemManagement
+        );
+        assert_eq!(
+            class(Method::DELETE, "/Items/abc/Images/Backdrop/0"),
+            ItemManagement
+        );
+        assert_eq!(
+            class(Method::GET, "/Items/abc/MetadataEditor"),
+            ItemManagement
+        );
+        assert_eq!(
+            class(Method::POST, "/Items/RemoteSearch/Apply/abc"),
+            ItemManagement
+        );
+        assert_eq!(
+            class(Method::POST, "/Items/RemoteSearch/Movie"),
+            ItemManagement
+        );
+        assert_eq!(
+            class(Method::POST, "/Videos/abc/Subtitles/1"),
+            ItemManagement
+        );
         assert_eq!(class(Method::POST, "/Audio/abc/Lyrics"), ItemManagement);
         assert_eq!(class(Method::POST, "/Videos/MergeVersions"), ItemManagement);
     }
@@ -330,7 +352,10 @@ mod tests {
         assert_eq!(class(Method::GET, "/Items/abc/Images/Primary"), Regular);
         assert_eq!(class(Method::POST, "/Items/abc/PlaybackInfo"), Regular);
         assert_eq!(class(Method::GET, "/Items/abc/Download"), Regular);
-        assert_eq!(class(Method::GET, "/Videos/abc/Subtitles/1/Stream.srt"), Regular);
+        assert_eq!(
+            class(Method::GET, "/Videos/abc/Subtitles/1/Stream.srt"),
+            Regular
+        );
         assert_eq!(class(Method::POST, "/Sessions/Playing"), Regular);
         assert_eq!(class(Method::GET, "/System/Info"), Regular);
         assert_eq!(class(Method::GET, "/"), Regular);
@@ -357,14 +382,20 @@ mod tests {
             assert_eq!(class(Method::GET, path), GlobalAdministration, "{path}");
         }
         assert_eq!(class(Method::POST, "/Users/New"), GlobalAdministration);
-        assert_eq!(class(Method::POST, "/Users/abc/Policy"), GlobalAdministration);
+        assert_eq!(
+            class(Method::POST, "/Users/abc/Policy"),
+            GlobalAdministration
+        );
         assert_eq!(class(Method::DELETE, "/Users/abc"), GlobalAdministration);
         assert_eq!(class(Method::GET, "/Users/abc"), Regular);
     }
 
     #[test]
     fn encoded_and_mixed_case_paths_do_not_bypass() {
-        assert_eq!(class(Method::GET, "/sYsTem/%43onfiguration"), GlobalAdministration);
+        assert_eq!(
+            class(Method::GET, "/sYsTem/%43onfiguration"),
+            GlobalAdministration
+        );
         assert_eq!(class(Method::POST, "/%49tems/abc"), ItemWrite);
         assert_eq!(class(Method::POST, "//Items//abc/"), ItemWrite);
     }

@@ -214,7 +214,10 @@ async fn authenticate_and_register(
     hooks.after_registration().await;
     state
         .admin_rights
-        .record(&response.access_token, response.user.policy.is_administrator)
+        .record(
+            &response.access_token,
+            response.user.policy.is_administrator,
+        )
         .await;
 
     let server_id = state.settings.read().await.server_id.clone();

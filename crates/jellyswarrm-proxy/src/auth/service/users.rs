@@ -151,7 +151,10 @@ impl UserAuthorizationService {
             .bind(&user.id)
             .execute(&self.pool)
             .await?;
-        info!("Management UI administrator ready: {}", user.original_username);
+        info!(
+            "Management UI administrator ready: {}",
+            user.original_username
+        );
         Ok(Some(user))
     }
 
