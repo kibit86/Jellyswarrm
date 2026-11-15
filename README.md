@@ -1,5 +1,5 @@
 > [!NOTE]
-> **This is a vibe-coded fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), made for one homelab and shared as is. With an AI coding assistant (Claude) it adds a few things on top of upstream v1.0.0: media management on the backends where the signed-in user is an administrator (see [docs/administration.md](docs/administration.md)), opening a single backend's own web client and dashboard through the proxy, and answering Jellyfin LAN discovery (UDP 7359) like a Jellyfin server does. Images are published as `ghcr.io/kibit86/jellyswarrm`. Everything else is upstream's work. Use at your own risk, with no support: the original project remains the reference, and problems found in this fork should not be reported to upstream.
+> **This is a vibe-coded fork** of [LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), made for one homelab and shared as is. With an AI coding assistant (Claude) it changes how accounts work and adds a few things on top of upstream v1.0.0: **one proxy account** with **one mapped account per Jellyfin server** (names and passwords may differ; apps sign in to the proxy), **each server's own dashboard opened already signed in** from the proxy (and the first-run setup of a brand-new server done through it), media management on the servers where the mapped account is an administrator, and Jellyfin LAN discovery (UDP 7359). See [docs/administration.md](docs/administration.md). Images are published as `ghcr.io/kibit86/jellyswarrm`. Everything else is upstream's work. Use at your own risk, with no support: the original project remains the reference, and problems found in this fork should not be reported to upstream.
 
 <h1 align="center">Jellyswarrm</h1>
 
@@ -48,7 +48,9 @@ Jellyswarrm is a reverse proxy that lets you combine multiple Jellyfin servers i
 * **User Page** – Personal dashboard for managing credentials and libraries. 
 * **QuickConnect** – Sign in on one device by approving the code from another authenticated device.
 * **Websocket Support** – Needed for real-time features like SyncPlay 
-* **Per-Backend Administration** *(this fork)* – Item editing, refresh and deletion only where your linked account is an administrator, and a pass-through to one backend's own dashboard ([details](docs/administration.md)).
+* **One Account, Mapped Per Server** *(this fork)* – A single proxy administrator; for each server you choose the account to use there. No accounts are created from backend logins.
+* **Server Panels** *(this fork)* – Open a server's own web client and dashboard already signed in with the mapped account, or run the first-time setup of a new server, through the proxy ([details](docs/administration.md)).
+* **Per-Server Item Management** *(this fork)* – Edit, refresh and delete items only where the mapped account is an administrator.
 * **Network Discovery** *(this fork)* – Jellyfin apps on the LAN find the proxy automatically (UDP 7359); can be switched off.
 
 
