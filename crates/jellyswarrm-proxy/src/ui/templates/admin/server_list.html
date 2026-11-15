@@ -47,70 +47,11 @@
                           style="min-width: 80px; display: inline-block;">
                         <span style="color: #666;">Checking...</span>
                     </span>
-                    {% if item.has_admin %}
-                    <span class="badge success">
-                        <i class="fas fa-shield-alt" style="margin-right: 0.3rem; font-size: 0.7rem;"></i> Federated
-                    </span>
-                    {% endif %}
                 </div>
             </td>
             <td style="text-align: center; vertical-align: middle;">
                 <div style="display: flex; justify-content: center; gap: 0.5rem;">
-                {% if !item.has_admin %}
-                <button type="button" class="icon-btn"
-                        onclick="document.getElementById('add-admin-modal-{{ item.server.id }}').showModal()"
-                        title="Add Admin">
-                    <i class="fas fa-user-shield" aria-hidden="true"></i>
-                </button>
-                
-                <dialog id="add-admin-modal-{{ item.server.id }}">
-                    <article>
-                        <header>
-                            <button aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
-                            <h3>Add Admin for {{ item.server.name }}</h3>
-                        </header>
-                        
-                        <div style="background-color: rgba(255, 193, 7, 0.1); border-left: 4px solid #ffc107; padding: 1rem; margin-bottom: 1.5rem; text-align: left;">
-                            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
-                                <i class="fas fa-exclamation-triangle" style="color: #ffc107; margin-top: 0.2rem;"></i>
-                                <div>
-                                    <strong style="color: #e0a800; display: block; margin-bottom: 0.25rem;">Disclaimer</strong>
-                                    <span style="font-size: 0.9rem; color: var(--text-color);">Adding an admin account gives Jellyswarrm <strong>full administrative control</strong> over this Jellyfin server. This allows the proxy to manage users and settings automatically.</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div id="admin-form-error-{{ item.server.id }}"></div>
-
-                        <form id="add-admin-form-{{ item.server.id }}" hx-post="/{{ ui_route }}/servers/{{ item.server.id }}/admin" hx-target="#admin-form-error-{{ item.server.id }}" hx-swap="innerHTML">
-                            <label>
-                                Username
-                                <input type="text" name="username" required>
-                            </label>
-                            <label>
-                                Password
-                                {% let pw_input_name = "password" %}
-                                {% let pw_input_placeholder = "Password" %}
-                                {% let pw_input_autocomplete = "new-password" %}
-                                {% let pw_input_required = true %}
-                                {% include "components/password_input.html" %}
-                            </label>
-                        </form>
-                        <footer style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                            <button type="button" class="secondary" onclick="this.closest('dialog').close()" style="margin-bottom: 0;">Cancel</button>
-                            <button type="submit" form="add-admin-form-{{ item.server.id }}" style="margin-bottom: 0;">Add Admin</button>
-                        </footer>
-                    </article>
-                </dialog>
-                {% else %}
-                <button type="button" class="icon-btn danger"
-                        hx-delete="/{{ ui_route }}/servers/{{ item.server.id }}/admin"
-                        hx-confirm="Remove admin credentials for '{{ item.server.name }}'?"
-                        hx-target="#server-list" hx-swap="innerHTML"
-                        title="Remove Admin">
-                    <i class="fas fa-user-times" aria-hidden="true"></i>
-                </button>
-                {% endif %}
+                {# Federation is off in this fork: no per-server administrator account is asked for. #}
 
                 <button type="button" class="icon-btn danger"
                         hx-delete="/{{ ui_route }}/servers/{{ item.server.id }}"

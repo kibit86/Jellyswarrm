@@ -33,7 +33,7 @@ use crate::{
     domain::ids::ServerId,
     http::state::ManagementState,
     servers::storage::Server,
-    ui::auth::AuthenticatedUser,
+    ui::{auth::AuthenticatedUser, backend_identity::PanelIdentity},
     upstream::headers::is_hop_by_hop_header,
 };
 
@@ -93,40 +93,136 @@ fn upstream_url(base: &str, rest: &str, query: Option<&str>, websocket: bool) ->
     }
 }
 
+/// The page that boots the backend's web client: the only response rewritten.
+fn is_web_entry(method: &Method, rest: &str) -> bool {
+    if *method != Method::GET {
+        return false;
+    }
+    let path = rest.trim_end_matches('/');
+    path == "web" || path == "web/index.html"
+}
+
+/// Headers that would make the backend answer the entry page with something other
+/// than a plain, complete HTML body that can be edited.
+fn is_entry_negotiation_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str(),
+        "accept-encoding" | "if-none-match" | "if-modified-since" | "range" | "if-range"
+    )
+}
+
+const PANEL_SCRIPT: &str = r#"(function () {
+  var PREFIX = %PREFIX%, MOUNT = %MOUNT%, SEED = %SEED%;
+  try {
+    var real = window.localStorage;
+    var scoped = {
+      getItem: function (k) { return real.getItem(PREFIX + k); },
+      setItem: function (k, v) { real.setItem(PREFIX + k, v); },
+      removeItem: function (k) { real.removeItem(PREFIX + k); },
+      clear: function () {
+        for (var i = real.length - 1; i >= 0; i--) {
+          var k = real.key(i);
+          if (k && k.indexOf(PREFIX) === 0) { real.removeItem(k); }
+        }
+      },
+      key: function (n) {
+        var c = 0;
+        for (var i = 0; i < real.length; i++) {
+          var k = real.key(i);
+          if (k && k.indexOf(PREFIX) === 0) { if (c === n) { return k.slice(PREFIX.length); } c++; }
+        }
+        return null;
+      }
+    };
+    Object.defineProperty(scoped, 'length', { get: function () {
+      var c = 0;
+      for (var i = 0; i < real.length; i++) {
+        var k = real.key(i);
+        if (k && k.indexOf(PREFIX) === 0) { c++; }
+      }
+      return c;
+    } });
+    Object.defineProperty(window, 'localStorage', { configurable: true, get: function () { return scoped; } });
+    if (SEED) {
+      var entry = Object.assign({}, SEED, { ManualAddress: location.origin + MOUNT, DateLastAccessed: Date.now() });
+      var raw = scoped.getItem('jellyfin_credentials');
+      var creds = raw ? JSON.parse(raw) : {};
+      var known = creds.Servers || [];
+      var previous = known.filter(function (s) { return s.Id === entry.Id; })[0] || {};
+      creds.Servers = [Object.assign({}, previous, entry)].concat(known.filter(function (s) { return s.Id !== entry.Id; }));
+      scoped.setItem('jellyfin_credentials', JSON.stringify(creds));
+    }
+  } catch (e) {
+    if (window.console) { console.warn('Jellyswarrm: storage scope not applied', e); }
+  }
+})();"#;
+
+/// Inline JSON must not be able to close the surrounding `<script>`.
+fn json_for_script<T: serde::Serialize>(value: &T) -> String {
+    serde_json::to_string(value)
+        .expect("plain data serializes")
+        .replace('<', "\\u003c")
+}
+
+/// What the page must do before the backend's web client starts: keep its storage
+/// apart from the proxy's own client (and from other backends), and hold the
+/// signed-in session for this backend.
+fn panel_script(server: &Server, mount: &str, identity: &PanelIdentity) -> String {
+    let seed = serde_json::json!({
+        "Id": identity.backend_server_id,
+        "Name": server.name,
+        "LastConnectionMode": 2,
+        "UserId": identity.user_id,
+        "AccessToken": identity.token,
+    });
+    PANEL_SCRIPT
+        .replace("%PREFIX%", &json_for_script(&format!("jsw-backend-{}:", server.id)))
+        .replace("%MOUNT%", &json_for_script(&mount))
+        .replace("%SEED%", &json_for_script(&seed))
+}
+
+/// Put `script` first in the page's `<head>`, so it runs before anything else.
+fn inject_script(html: &str, script: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let open = lower.find("<head")?;
+    let close = open + lower[open..].find('>')? + 1;
+    let mut out = String::with_capacity(html.len() + script.len() + 20);
+    out.push_str(&html[..close]);
+    out.push_str("<script>");
+    out.push_str(script);
+    out.push_str("</script>");
+    out.push_str(&html[close..]);
+    Some(out)
+}
+
 /// A path that could climb out of the backend's base path.
 fn has_dot_segments(rest: &str) -> bool {
     let decoded = percent_encoding::percent_decode_str(rest).decode_utf8_lossy();
     decoded.split(['/', '\\']).any(|part| part == "..")
 }
 
-/// Let the user in only if they have a linked account on `server_id` that is an
-/// administrator there. Returns the server on success.
+/// Let the user in only if the account they mapped on `server_id` is an
+/// administrator there. Returns the server and the signed-in backend identity.
 async fn authorize(
     state: &ManagementState,
     user_id: &str,
     server_id: ServerId,
-) -> Result<Server, StatusCode> {
+) -> Result<(Server, std::sync::Arc<PanelIdentity>), StatusCode> {
     let server = state
         .server_storage
         .get_server_by_id(server_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let sessions = state
-        .user_authorization
-        .get_user_sessions(user_id, None)
+    let identity = state
+        .panel_identities
+        .get(state, user_id, &server)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    for (session, candidate) in sessions.iter().filter(|(_, s)| s.id == server.id) {
-        if state
-            .admin_rights
-            .is_administrator(&state.reqwest_client, session, candidate)
-            .await
-        {
-            return Ok(server);
-        }
+        .map_err(StatusCode::from)?;
+    if !identity.is_administrator {
+        return Err(StatusCode::FORBIDDEN);
     }
-    Err(StatusCode::FORBIDDEN)
+    Ok((server, identity))
 }
 
 /// `/<ui>/backend/{id}` without a path: open the backend's web client.
@@ -154,8 +250,8 @@ pub(crate) async fn forward(
     if has_dot_segments(&rest) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let server = match authorize(&state, &user.id, server_id).await {
-        Ok(server) => server,
+    let (server, identity) = match authorize(&state, &user.id, server_id).await {
+        Ok(authorized) => authorized,
         Err(status) => return status.into_response(),
     };
     let query = request.uri().query().map(str::to_owned);
@@ -168,11 +264,13 @@ pub(crate) async fn forward(
     let mount = mount(&state.paths.ui_route(), server_id);
     let url = upstream_url(server.url.as_str(), &rest, query.as_deref(), false);
     let (parts, body) = request.into_parts();
+    let entry = is_web_entry(&parts.method, &rest);
     let mut headers = HeaderMap::new();
     for (name, value) in &parts.headers {
-        if !is_dropped_request_header(name) {
-            headers.append(name.clone(), value.clone());
+        if is_dropped_request_header(name) || (entry && is_entry_negotiation_header(name)) {
+            continue;
         }
+        headers.append(name.clone(), value.clone());
     }
     let method = if parts.method == Method::CONNECT {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
@@ -192,6 +290,13 @@ pub(crate) async fn forward(
         }
     };
 
+    let rewrite_page = entry
+        && response.status() == StatusCode::OK
+        && response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/html"));
     let mut builder = Response::builder().status(response.status());
     let out = builder.headers_mut().expect("fresh builder");
     for (name, value) in response.headers() {
@@ -211,6 +316,35 @@ pub(crate) async fn forward(
             }
         }
         out.append(name.clone(), value.clone());
+    }
+    if rewrite_page {
+        let body = match response.bytes().await {
+            Ok(body) => body,
+            Err(error) => {
+                warn!(server_id = %server_id, %error, "Could not read the backend's start page");
+                return StatusCode::BAD_GATEWAY.into_response();
+            }
+        };
+        let html = String::from_utf8_lossy(&body);
+        let page = inject_script(&html, &panel_script(&server, &mount, &identity))
+            .unwrap_or_else(|| {
+                warn!(server_id = %server_id, "The backend's start page has no <head>: serving it unchanged");
+                html.into_owned()
+            });
+        // The page now depends on who is asking: it must not be cached or revalidated.
+        for name in [
+            header::CONTENT_LENGTH,
+            header::CONTENT_ENCODING,
+            header::ETAG,
+            header::LAST_MODIFIED,
+            header::CACHE_CONTROL,
+        ] {
+            out.remove(name);
+        }
+        out.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return builder
+            .body(Body::from(page))
+            .unwrap_or_else(|_| StatusCode::BAD_GATEWAY.into_response());
     }
     builder
         .body(Body::from_stream(response.bytes_stream()))

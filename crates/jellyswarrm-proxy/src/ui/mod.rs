@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub(crate) mod admin;
+pub(crate) mod backend_identity;
 pub(crate) mod backend_passthrough;
 pub(crate) mod auth;
 pub(crate) mod release_status;

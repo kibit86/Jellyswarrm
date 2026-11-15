@@ -209,23 +209,24 @@ pub(crate) async fn get_user_servers(
         .filter(|s| !mapped_servers.iter().any(|ms| ms.id == s.id))
         .collect();
 
-    let administrator_ids = match state
-        .user_authorization
-        .get_user_sessions(&user.id, None)
-        .await
-    {
-        Ok(sessions) => state
-            .admin_rights
-            .administrator_servers(&state.reqwest_client, &sessions)
-            .await
-            .into_iter()
-            .map(ServerId::as_i64)
-            .collect(),
-        Err(e) => {
-            error!("Failed to list sessions for administrator check: {}", e);
-            Vec::new()
-        }
-    };
+    // The Administer button is for the servers where the account the user mapped is
+    // an administrator. Signing in to each backend is cached, and one that is down
+    // simply gets no button.
+    let administrator_ids: Vec<i64> = futures_util::future::join_all(
+        mapped_servers.iter().map(|server| async {
+            state
+                .panel_identities
+                .get(&state, &user.id, server)
+                .await
+                .ok()
+                .filter(|identity| identity.is_administrator)
+                .map(|_| server.id.as_i64())
+        }),
+    )
+    .await
+    .into_iter()
+    .flatten()
+    .collect();
 
     let template = UserServerListTemplate {
         username: user.username,
@@ -307,6 +308,7 @@ pub(crate) async fn connect_server(
                 .await
             {
                 Ok(_) => {
+                    state.panel_identities.forget(&user.id, &server).await;
                     info!(
                         "Created mapping for user {} to server {}",
                         user.username, server.name
@@ -384,6 +386,7 @@ pub(crate) async fn delete_server_mapping(
             .await
         {
             Ok(_) => {
+                state.panel_identities.forget(&user.id, &server).await;
                 info!(
                     "Deleted mapping for user {} to server {}",
                     user.username, server.name

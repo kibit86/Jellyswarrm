@@ -69,6 +69,7 @@ impl AdapterFixture {
             reqwest_client: client.clone(),
             streaming_client: client.clone(),
             admin_rights: media.services.admin_rights.clone(),
+            panel_identities: Arc::new(crate::ui::backend_identity::PanelIdentities::new()),
             user_authorization: media.user_authorization.clone(),
             server_storage: media.server_storage.clone(),
             virtual_library_service: media.virtual_library_service.clone(),

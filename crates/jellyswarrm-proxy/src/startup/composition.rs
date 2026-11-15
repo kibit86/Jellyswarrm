@@ -110,6 +110,7 @@ pub(super) fn adapter_state(
         reqwest_client: clients.api.clone(),
         streaming_client: clients.streaming.clone(),
         admin_rights: admin_rights.clone(),
+        panel_identities: Arc::new(crate::ui::backend_identity::PanelIdentities::new()),
         user_authorization: user_authorization.clone(),
         server_storage: server_storage.clone(),
         virtual_library_service: virtual_library_service.clone(),
