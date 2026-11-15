@@ -250,6 +250,12 @@ impl Fixture {
     pub(crate) async fn administrator_on(&self, index: usize, administrator: bool) {
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .and(wiremock::matchers::path(format!("/Users/backend-user-{index}")))
+            // Jellyfin 12 reads only `Authorization`; the lookup must use it, carrying
+            // a backend session token.
+            .and(wiremock::matchers::header_regex(
+                "authorization",
+                r#"^MediaBrowser .*Token="[^"]+""#,
+            ))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
                 json!({"Name":"alice","Policy":{"IsAdministrator":administrator}}),
             ))

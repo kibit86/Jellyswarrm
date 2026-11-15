@@ -257,8 +257,9 @@ impl AdminRights {
         let url = format!("{base}/Users/{}", session.original_user_id);
         let response = client
             .get(&url)
+            // `Authorization`: Jellyfin 12 no longer reads X-Emby-Authorization.
             .header(
-                "X-Emby-Authorization",
+                reqwest::header::AUTHORIZATION,
                 format!(
                     "MediaBrowser Client=\"Jellyswarrm Proxy\", Device=\"Server\", DeviceId=\"jellyswarrm-proxy\", Version=\"{}\", Token=\"{}\"",
                     env!("CARGO_PKG_VERSION"),
