@@ -44,6 +44,13 @@
                 </td>
                 <td>
                     <div class="server-actions">
+                    {% if administrator_ids.contains(&server.id.as_i64()) %}
+                    <a role="button" class="outline server-action"
+                        href="/{{ ui_route }}/backend/{{ server.id }}/web/" target="_blank" rel="noopener"
+                        title="Open {{ server.name }} with its own administration (you sign in on that server)">
+                        Administer
+                    </a>
+                    {% endif %}
                     <button type="button"
                         hx-delete="/{{ ui_route }}/user/servers/{{ server.id }}"
                         hx-confirm="Are you sure you want to disconnect from {{ server.name }}?"

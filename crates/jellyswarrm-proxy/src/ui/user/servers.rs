@@ -26,6 +26,8 @@ pub(crate) struct UserServerListTemplate {
     pub(crate) username: String,
     pub(crate) servers: Vec<Server>,
     pub(crate) unmapped_servers: Vec<Server>,
+    /// IDs of the listed servers where the user is an administrator.
+    pub(crate) administrator_ids: Vec<i64>,
     pub(crate) ui_route: String,
 }
 
@@ -207,10 +209,29 @@ pub(crate) async fn get_user_servers(
         .filter(|s| !mapped_servers.iter().any(|ms| ms.id == s.id))
         .collect();
 
+    let administrator_ids = match state
+        .user_authorization
+        .get_user_sessions(&user.id, None)
+        .await
+    {
+        Ok(sessions) => state
+            .admin_rights
+            .administrator_servers(&state.reqwest_client, &sessions)
+            .await
+            .into_iter()
+            .map(ServerId::as_i64)
+            .collect(),
+        Err(e) => {
+            error!("Failed to list sessions for administrator check: {}", e);
+            Vec::new()
+        }
+    };
+
     let template = UserServerListTemplate {
         username: user.username,
         servers: mapped_servers,
         unmapped_servers,
+        administrator_ids,
         ui_route: state.paths.ui_route(),
     };
 

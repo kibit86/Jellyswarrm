@@ -109,6 +109,10 @@ pub(crate) struct SettingsState {
 #[derive(Clone)]
 pub(crate) struct ManagementState {
     pub(crate) reqwest_client: reqwest::Client,
+    /// No total timeout: used for the per-server pass-through, whose responses
+    /// (logs, downloads) may legitimately stream for a long time.
+    pub(crate) streaming_client: reqwest::Client,
+    pub(crate) admin_rights: Arc<crate::application::admin_rights::AdminRights>,
     pub(crate) user_authorization: Arc<UserAuthorizationService>,
     pub(crate) server_storage: Arc<ServerStorageService>,
     pub(crate) virtual_library_service: Arc<VirtualLibraryService>,

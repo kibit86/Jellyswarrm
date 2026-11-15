@@ -67,6 +67,8 @@ impl AdapterFixture {
         );
         let management = ManagementState {
             reqwest_client: client.clone(),
+            streaming_client: client.clone(),
+            admin_rights: media.services.admin_rights.clone(),
             user_authorization: media.user_authorization.clone(),
             server_storage: media.server_storage.clone(),
             virtual_library_service: media.virtual_library_service.clone(),

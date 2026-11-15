@@ -108,6 +108,8 @@ pub(super) fn adapter_state(
     };
     let management = ManagementState {
         reqwest_client: clients.api.clone(),
+        streaming_client: clients.streaming.clone(),
+        admin_rights: admin_rights.clone(),
         user_authorization: user_authorization.clone(),
         server_storage: server_storage.clone(),
         virtual_library_service: virtual_library_service.clone(),
