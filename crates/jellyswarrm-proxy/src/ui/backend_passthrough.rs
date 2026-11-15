@@ -34,24 +34,44 @@ use crate::{
     http::state::ManagementState,
     servers::storage::Server,
     ui::{auth::AuthenticatedUser, backend_identity::PanelIdentity},
-    upstream::headers::is_hop_by_hop_header,
+    upstream::headers::{prepare_request_headers, remove_hop_by_hop_headers},
 };
 
-/// Request headers that must not travel to the backend: the proxy's session
-/// cookie, the browser's own `Host`, and framing the HTTP client sets itself.
-fn is_dropped_request_header(name: &HeaderName) -> bool {
-    is_hop_by_hop_header(name)
-        || matches!(
-            name.as_str(),
-            "host" | "cookie" | "content-length" | "sec-websocket-key" | "sec-websocket-version"
-                | "sec-websocket-extensions" | "sec-websocket-accept"
-        )
+/// What the browser sent, minus what must not travel to the backend: the shared
+/// transport rules (hop-by-hop fields, `Host`, `Accept-Encoding`: the HTTP client
+/// asks for, and decodes, its own), plus the proxy's session cookie, framing the
+/// client sets itself, the WebSocket handshake fields (the relay makes its own),
+/// and, for the start page, whatever would make the backend answer with something
+/// other than a plain, complete page.
+fn backend_request_headers(received: &HeaderMap, is_start_page: bool) -> HeaderMap {
+    let mut headers = received.clone();
+    prepare_request_headers(&mut headers);
+    for name in [
+        "cookie",
+        "content-length",
+        "sec-websocket-key",
+        "sec-websocket-version",
+        "sec-websocket-extensions",
+        "sec-websocket-accept",
+    ] {
+        headers.remove(name);
+    }
+    if is_start_page {
+        for name in ["if-none-match", "if-modified-since", "range", "if-range"] {
+            headers.remove(name);
+        }
+    }
+    headers
 }
 
-/// Response headers that must not reach the browser: the backend's cookies
-/// would collide with the proxy's, and framing is recomputed.
-fn is_dropped_response_header(name: &HeaderName) -> bool {
-    is_hop_by_hop_header(name) || matches!(name.as_str(), "set-cookie" | "set-cookie2")
+/// What the backend answered, minus what must not reach the browser: hop-by-hop
+/// fields, and the backend's cookies (they would collide with the proxy's).
+fn browser_response_headers(received: &HeaderMap) -> HeaderMap {
+    let mut headers = received.clone();
+    remove_hop_by_hop_headers(&mut headers);
+    headers.remove(header::SET_COOKIE);
+    headers.remove("set-cookie2");
+    headers
 }
 
 /// The path under which this backend is served, e.g. `ui/backend/3`.
@@ -100,15 +120,6 @@ fn is_web_entry(method: &Method, rest: &str) -> bool {
     }
     let path = rest.trim_end_matches('/');
     path == "web" || path == "web/index.html"
-}
-
-/// Headers that would make the backend answer the entry page with something other
-/// than a plain, complete HTML body that can be edited.
-fn is_entry_negotiation_header(name: &HeaderName) -> bool {
-    matches!(
-        name.as_str(),
-        "accept-encoding" | "if-none-match" | "if-modified-since" | "range" | "if-range"
-    )
 }
 
 const PANEL_SCRIPT: &str = r#"(function () {
@@ -287,13 +298,7 @@ pub(crate) async fn forward(
     let is_start_page = is_web_entry(&parts.method, &rest);
     let completes_setup =
         parts.method == Method::POST && rest.trim_matches('/').eq_ignore_ascii_case("Startup/Complete");
-    let mut headers = HeaderMap::new();
-    for (name, value) in &parts.headers {
-        if is_dropped_request_header(name) || (is_start_page && is_entry_negotiation_header(name)) {
-            continue;
-        }
-        headers.append(name.clone(), value.clone());
-    }
+    let headers = backend_request_headers(&parts.headers, is_start_page);
     let method = if parts.method == Method::CONNECT {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     } else {
@@ -324,10 +329,7 @@ pub(crate) async fn forward(
             .is_some_and(|value| value.to_ascii_lowercase().starts_with("text/html"));
     let mut builder = Response::builder().status(response.status());
     let out = builder.headers_mut().expect("fresh builder");
-    for (name, value) in response.headers() {
-        if is_dropped_response_header(name) {
-            continue;
-        }
+    for (name, value) in &browser_response_headers(response.headers()) {
         if name == header::LOCATION {
             if let Ok(location) = value.to_str() {
                 if let Ok(rewritten) = HeaderValue::from_str(&rewrite_location(
@@ -513,9 +515,16 @@ mod tests {
             assert!(!is_web_entry(&get, rest), "{rest}");
         }
         assert!(!is_web_entry(&Method::POST, "web/"));
-        assert!(is_entry_negotiation_header(&HeaderName::from_static("accept-encoding")));
-        assert!(is_entry_negotiation_header(&HeaderName::from_static("if-none-match")));
-        assert!(!is_entry_negotiation_header(&header::AUTHORIZATION));
+        // The start page is fetched whole and unconditionally; other requests keep their conditions.
+        let mut browser = HeaderMap::new();
+        for (name, value) in [("if-none-match", "\"x\""), ("range", "bytes=0-9"), ("authorization", "t")] {
+            browser.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+        }
+        let page = backend_request_headers(&browser, true);
+        assert!(page.get("if-none-match").is_none() && page.get("range").is_none());
+        assert!(page.get("authorization").is_some());
+        let asset = backend_request_headers(&browser, false);
+        assert!(asset.get("if-none-match").is_some() && asset.get("range").is_some());
     }
 
     #[test]
@@ -544,11 +553,33 @@ mod tests {
 
     #[test]
     fn cookies_never_cross_the_proxy() {
-        assert!(is_dropped_request_header(&header::COOKIE));
-        assert!(is_dropped_request_header(&header::HOST));
-        assert!(!is_dropped_request_header(&header::AUTHORIZATION));
-        assert!(!is_dropped_request_header(&HeaderName::from_static("x-emby-authorization")));
-        assert!(is_dropped_response_header(&header::SET_COOKIE));
-        assert!(!is_dropped_response_header(&header::CONTENT_TYPE));
+        let mut browser = HeaderMap::new();
+        for (name, value) in [
+            ("cookie", "proxy-session=secret"),
+            ("host", "proxy.lan"),
+            ("accept-encoding", "gzip, br, zstd"),
+            ("connection", "keep-alive, x-nominated"),
+            ("x-nominated", "1"),
+            ("authorization", "MediaBrowser Token=\"t\""),
+            ("x-emby-authorization", "MediaBrowser Token=\"t\""),
+            ("sec-websocket-key", "k"),
+        ] {
+            browser.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+        }
+        let to_backend = backend_request_headers(&browser, false);
+        for gone in ["cookie", "host", "accept-encoding", "connection", "x-nominated", "sec-websocket-key"] {
+            assert!(to_backend.get(gone).is_none(), "{gone} must not reach the backend");
+        }
+        assert!(to_backend.get("authorization").is_some());
+        assert!(to_backend.get("x-emby-authorization").is_some());
+
+        let mut backend = HeaderMap::new();
+        for (name, value) in [("set-cookie", "a=1"), ("set-cookie2", "b=2"), ("content-type", "text/html"), ("transfer-encoding", "chunked")] {
+            backend.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+        }
+        let to_browser = browser_response_headers(&backend);
+        assert!(to_browser.get("set-cookie").is_none() && to_browser.get("set-cookie2").is_none());
+        assert!(to_browser.get("transfer-encoding").is_none());
+        assert_eq!(to_browser["content-type"], "text/html");
     }
 }
