@@ -74,7 +74,11 @@ Start your debug Jellyswarrm build and log in as `test` / `test`. Open the admin
 **Libraries** tab and check that real libraries beyond the first 20 are available
 for assignment to virtual libraries, including the `Pagination 24` entries.
 The default setup exercises regular-user mappings and automatic merging. To
-compare federated access, connect the test servers using `admin` / `password`.
+compare with an administrator mapping, sign in to the management UI (the proxy's
+own administrator, `admin` / `jellyswarrm` unless configured otherwise), open
+**My servers** and connect a test server with the backend account `admin` /
+`password`. Do not use `admin` as a client login to the proxy in this stack: that
+name belongs to the proxy's administrator.
 
 Opening the admin Libraries tab discovers libraries through mapped user accounts
 even if nobody has browsed the Jellyfin Web catalog yet. **Refresh libraries**

@@ -19,7 +19,7 @@ use axum::{
         },
         Path, Request, State,
     },
-    http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
 use futures_util::{SinkExt, StreamExt};
@@ -191,7 +191,10 @@ fn panel_script(server: &Server, mount: &str, entry: &Entry) -> String {
         Entry::Manual => serde_json::Value::Null,
     };
     PANEL_SCRIPT
-        .replace("%PREFIX%", &json_for_script(&format!("jsw-backend-{}:", server.id)))
+        .replace(
+            "%PREFIX%",
+            &json_for_script(&format!("jsw-backend-{}:", server.id)),
+        )
         .replace("%MOUNT%", &json_for_script(&mount))
         .replace("%SEED%", &json_for_script(&seed))
 }
@@ -296,8 +299,10 @@ pub(crate) async fn forward(
     let url = upstream_url(server.url.as_str(), &rest, query.as_deref(), false);
     let (parts, body) = request.into_parts();
     let is_start_page = is_web_entry(&parts.method, &rest);
-    let completes_setup =
-        parts.method == Method::POST && rest.trim_matches('/').eq_ignore_ascii_case("Startup/Complete");
+    let completes_setup = parts.method == Method::POST
+        && rest
+            .trim_matches('/')
+            .eq_ignore_ascii_case("Startup/Complete");
     let headers = backend_request_headers(&parts.headers, is_start_page);
     let method = if parts.method == Method::CONNECT {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
@@ -332,11 +337,9 @@ pub(crate) async fn forward(
     for (name, value) in &browser_response_headers(response.headers()) {
         if name == header::LOCATION {
             if let Ok(location) = value.to_str() {
-                if let Ok(rewritten) = HeaderValue::from_str(&rewrite_location(
-                    location,
-                    &mount,
-                    server.url.as_str(),
-                )) {
+                if let Ok(rewritten) =
+                    HeaderValue::from_str(&rewrite_location(location, &mount, server.url.as_str()))
+                {
                     out.append(header::LOCATION, rewritten);
                     continue;
                 }
@@ -384,12 +387,12 @@ fn to_upstream(message: ClientMessage) -> UpstreamMessage {
         ClientMessage::Binary(bytes) => UpstreamMessage::Binary(bytes.to_vec().into()),
         ClientMessage::Ping(bytes) => UpstreamMessage::Ping(bytes.to_vec().into()),
         ClientMessage::Pong(bytes) => UpstreamMessage::Pong(bytes.to_vec().into()),
-        ClientMessage::Close(frame) => UpstreamMessage::Close(frame.map(|frame| {
-            UpstreamCloseFrame {
+        ClientMessage::Close(frame) => {
+            UpstreamMessage::Close(frame.map(|frame| UpstreamCloseFrame {
                 code: CloseCode::from(frame.code),
                 reason: frame.reason.as_str().into(),
-            }
-        })),
+            }))
+        }
     }
 }
 
@@ -450,6 +453,7 @@ async fn relay_websocket(client: WebSocket, url: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::http::HeaderName;
 
     #[test]
     fn location_is_pulled_back_into_the_mount() {
@@ -473,7 +477,10 @@ mod tests {
             rewrite_location("https://example.com/x", &mount, base),
             "https://example.com/x"
         );
-        assert_eq!(rewrite_location("//evil.example/x", &mount, base), "//evil.example/x");
+        assert_eq!(
+            rewrite_location("//evil.example/x", &mount, base),
+            "//evil.example/x"
+        );
         // A host that merely starts like the backend's is not the backend.
         assert_eq!(
             rewrite_location("http://192.0.2.10:80961/x", &mount, base),
@@ -491,8 +498,14 @@ mod tests {
             upstream_url("https://nas", "socket", Some("api_key=x"), true),
             "wss://nas/socket?api_key=x"
         );
-        assert_eq!(upstream_url("http://nas:8096", "x", None, true), "ws://nas:8096/x");
-        assert_eq!(upstream_url("http://nas:8096", "x", Some(""), false), "http://nas:8096/x");
+        assert_eq!(
+            upstream_url("http://nas:8096", "x", None, true),
+            "ws://nas:8096/x"
+        );
+        assert_eq!(
+            upstream_url("http://nas:8096", "x", Some(""), false),
+            "http://nas:8096/x"
+        );
     }
 
     #[test]
@@ -511,14 +524,27 @@ mod tests {
         for rest in ["web", "web/", "web/index.html"] {
             assert!(is_web_entry(&get, rest), "{rest}");
         }
-        for rest in ["web/main.bundle.js", "web/index.html.map", "System/Info", "", "web/sub/index.html"] {
+        for rest in [
+            "web/main.bundle.js",
+            "web/index.html.map",
+            "System/Info",
+            "",
+            "web/sub/index.html",
+        ] {
             assert!(!is_web_entry(&get, rest), "{rest}");
         }
         assert!(!is_web_entry(&Method::POST, "web/"));
         // The start page is fetched whole and unconditionally; other requests keep their conditions.
         let mut browser = HeaderMap::new();
-        for (name, value) in [("if-none-match", "\"x\""), ("range", "bytes=0-9"), ("authorization", "t")] {
-            browser.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+        for (name, value) in [
+            ("if-none-match", "\"x\""),
+            ("range", "bytes=0-9"),
+            ("authorization", "t"),
+        ] {
+            browser.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
         }
         let page = backend_request_headers(&browser, true);
         assert!(page.get("if-none-match").is_none() && page.get("range").is_none());
@@ -536,8 +562,13 @@ mod tests {
             let page = inject_script(html, "RUN()").expect("has a <head>");
             let head_end = page.find('>').unwrap();
             assert!(page.contains("<script>RUN()</script>"), "{page}");
-            assert!(page.find("<script>").unwrap() > page.to_ascii_lowercase().find("<head").unwrap());
-            assert!(page.find("<script>").unwrap() < page.find("<title>").unwrap(), "before everything else");
+            assert!(
+                page.find("<script>").unwrap() > page.to_ascii_lowercase().find("<head").unwrap()
+            );
+            assert!(
+                page.find("<script>").unwrap() < page.find("<title>").unwrap(),
+                "before everything else"
+            );
             assert!(page.len() > html.len() && head_end > 0);
         }
         assert!(inject_script("<html><body>no head</body></html>", "RUN()").is_none());
@@ -564,18 +595,39 @@ mod tests {
             ("x-emby-authorization", "MediaBrowser Token=\"t\""),
             ("sec-websocket-key", "k"),
         ] {
-            browser.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+            browser.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
         }
         let to_backend = backend_request_headers(&browser, false);
-        for gone in ["cookie", "host", "accept-encoding", "connection", "x-nominated", "sec-websocket-key"] {
-            assert!(to_backend.get(gone).is_none(), "{gone} must not reach the backend");
+        for gone in [
+            "cookie",
+            "host",
+            "accept-encoding",
+            "connection",
+            "x-nominated",
+            "sec-websocket-key",
+        ] {
+            assert!(
+                to_backend.get(gone).is_none(),
+                "{gone} must not reach the backend"
+            );
         }
         assert!(to_backend.get("authorization").is_some());
         assert!(to_backend.get("x-emby-authorization").is_some());
 
         let mut backend = HeaderMap::new();
-        for (name, value) in [("set-cookie", "a=1"), ("set-cookie2", "b=2"), ("content-type", "text/html"), ("transfer-encoding", "chunked")] {
-            backend.insert(HeaderName::from_static(name), HeaderValue::from_static(value));
+        for (name, value) in [
+            ("set-cookie", "a=1"),
+            ("set-cookie2", "b=2"),
+            ("content-type", "text/html"),
+            ("transfer-encoding", "chunked"),
+        ] {
+            backend.insert(
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            );
         }
         let to_browser = browser_response_headers(&backend);
         assert!(to_browser.get("set-cookie").is_none() && to_browser.get("set-cookie2").is_none());

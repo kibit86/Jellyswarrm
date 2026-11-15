@@ -1,14 +1,32 @@
 name: CI
 
+# One pipeline, trunk + tags:
+#  - pull request to main : checks (build/test/clippy/fmt, advisories, Docker + browser
+#                           integration) and an image build that is NOT published.
+#  - push to main         : the same checks; only if ALL pass the image is published as the
+#                           snapshot `edge` + `sha-<commit>`.
+#                           If the version in Cargo.toml has no tag yet, it is a RELEASE: also
+#                           X.Y.Z, X.Y, X and latest, then the tag vX.Y.Z and the GitHub
+#                           Release are created on that very commit (last step).
+# Tags are never pushed by hand and never trigger anything: they only come out of main.
+# See docs/releasing.md.
 on:
-  push:
-    branches: [ main ]
   pull_request:
+    branches: [ main ]
+  push:
     branches: [ main ]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+# One run at a time per branch: two quick merges must not race for the same tag.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -130,3 +148,192 @@ jobs:
         path: target/browser-test-artifacts/
         if-no-files-found: ignore
         retention-days: 7
+
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      minor: ${{ steps.v.outputs.minor }}
+      major: ${{ steps.v.outputs.major }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+    - name: Checkout (all tags)
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Decide whether this is a release
+      id: v
+      run: |
+        version=$(python3 -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])")
+        if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::Version '$version' in Cargo.toml is not X.Y.Z"; exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "major=${version%%.*}" >> "$GITHUB_OUTPUT"
+        echo "minor=$(echo "$version" | cut -d. -f1,2)" >> "$GITHUB_OUTPUT"
+
+        release=false
+        if [ "${{ github.event_name }}" = "push" ]; then
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "Tag v$version already exists: snapshot only."
+          else
+            latest=$(git tag --list 'v[0-9]*' | sed 's/^v//' | sort -V | tail -n1)
+            highest=$(printf '%s\n%s\n' "${latest:-0.0.0}" "$version" | sort -V | tail -n1)
+            if [ "$highest" != "$version" ]; then
+              echo "::error::Version $version is lower than the latest tag v$latest: fix Cargo.toml"; exit 1
+            fi
+            echo "New version $version (latest tag: v${latest:-none}): this is a RELEASE."
+            release=true
+          fi
+        fi
+        echo "release=$release" >> "$GITHUB_OUTPUT"
+
+  # Publishing (and the PR image build) wait for every check above: one pipeline, one run.
+  build-and-push:
+    needs: [version, build, dependencies, integration]
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout (with submodules)
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name == 'push'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Convert repository name to lowercase
+      id: repo
+      run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+    - name: Create platform suffix
+      id: platform
+      run: echo "suffix=$(echo '${{ matrix.platform }}' | tr '/' '-')" >> $GITHUB_OUTPUT
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
+        flavor: |
+          suffix=-${{ steps.platform.outputs.suffix }}
+        tags: |
+          type=raw,value=edge,enable=${{ github.event_name == 'push' }}
+          type=sha,enable=${{ github.event_name == 'push' }}
+          type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.major }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' }}
+
+    - name: Build and push Docker image
+      if: github.event_name == 'push'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: ${{ matrix.platform }}
+        outputs: type=registry
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        provenance: false
+        sbom: false
+        cache-from: |
+          type=gha,scope=${{ steps.platform.outputs.suffix }}
+          type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:cache-${{ steps.platform.outputs.suffix }}
+        cache-to: |
+          type=gha,scope=${{ steps.platform.outputs.suffix }},mode=max
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+    - name: Build Docker image (nothing is published)
+      if: github.event_name != 'push'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: ${{ matrix.platform }}
+        outputs: type=docker
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        provenance: false
+        sbom: false
+        cache-from: |
+          type=gha,scope=${{ steps.platform.outputs.suffix }}
+          type=registry,ref=${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}:cache-${{ steps.platform.outputs.suffix }}
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
+
+  create-manifest:
+    if: github.event_name == 'push'
+    needs: [version, build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # creates the tag and the GitHub Release on a release
+      packages: write
+
+    steps:
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Convert repository name to lowercase
+      id: repo
+      run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ steps.repo.outputs.name }}
+        tags: |
+          type=raw,value=edge
+          type=sha
+          type=raw,value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.minor }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=${{ needs.version.outputs.major }},enable=${{ needs.version.outputs.release == 'true' }}
+          type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' }}
+
+    - name: Create and push multi-platform manifest
+      run: |
+        TAGS="${{ steps.meta.outputs.tags }}"
+        for TAG in $TAGS; do
+          docker manifest create $TAG \
+            --amend ${TAG}-linux-amd64 \
+            --amend ${TAG}-linux-arm64
+          docker manifest push $TAG
+        done
+
+    # Last step on purpose: the tag only exists once the images are all published.
+    - name: Tag the release and create the GitHub Release
+      if: needs.version.outputs.release == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "v${{ needs.version.outputs.version }}" \
+          --repo "${{ github.repository }}" \
+          --target "${{ github.sha }}" \
+          --title "v${{ needs.version.outputs.version }}" \
+          --generate-notes

@@ -189,7 +189,12 @@ async fn requests_and_responses_pass_unchanged_except_cookies_and_redirects() {
         "the proxy's session cookie must not reach the backend"
     );
     assert_eq!(
-        seen[0].headers.get("authorization").unwrap().to_str().unwrap(),
+        seen[0]
+            .headers
+            .get("authorization")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         r#"MediaBrowser Token="backend-session""#
     );
 
@@ -278,7 +283,10 @@ async fn http_and_websocket_backend() -> std::net::SocketAddr {
                     return;
                 }
                 let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-                socket.send(Message::text("hello from backend")).await.unwrap();
+                socket
+                    .send(Message::text("hello from backend"))
+                    .await
+                    .unwrap();
                 while let Some(Ok(message)) = socket.next().await {
                     if message.is_text() {
                         socket.send(message).await.unwrap();
@@ -329,12 +337,17 @@ async fn websocket_is_relayed_both_ways() {
         server.id
     );
     let mut request = url.into_client_request().unwrap();
-    request.headers_mut().insert("cookie", cookie.parse().unwrap());
+    request
+        .headers_mut()
+        .insert("cookie", cookie.parse().unwrap());
     let (mut socket, _) = tokio_tungstenite::connect_async(request).await.unwrap();
 
     let greeting = socket.next().await.unwrap().unwrap();
     assert_eq!(greeting.into_text().unwrap().as_str(), "hello from backend");
-    socket.send(Message::text("ping from client")).await.unwrap();
+    socket
+        .send(Message::text("ping from client"))
+        .await
+        .unwrap();
     let echoed = socket.next().await.unwrap().unwrap();
     assert_eq!(echoed.into_text().unwrap().as_str(), "ping from client");
 }
@@ -366,9 +379,7 @@ async fn mount_start_page(f: &Fixture, index: usize) {
         .await;
     Mock::given(method("GET"))
         .and(path("/web/main.bundle.js"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_raw("console.log(1)", "text/javascript"),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw("console.log(1)", "text/javascript"))
         .mount(&f.upstreams[index])
         .await;
 }
@@ -393,17 +404,39 @@ async fn the_start_page_gets_its_own_storage_and_the_signed_in_session() {
         .unwrap();
     assert_eq!(page.status(), StatusCode::OK);
     assert_eq!(page.headers()["cache-control"], "no-store");
-    assert!(page.headers().get("etag").is_none(), "the page depends on who asks");
-    let declared_length: usize = page.headers()["content-length"].to_str().unwrap().parse().unwrap();
+    assert!(
+        page.headers().get("etag").is_none(),
+        "the page depends on who asks"
+    );
+    let declared_length: usize = page.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
     let html = page.text().await.unwrap();
     assert_eq!(declared_length, html.len());
-    assert!(html.contains("<head><script>"), "the script comes first in <head>: {html}");
-    assert!(html.contains(&format!("jsw-backend-{id}:")), "storage is scoped per backend");
-    assert!(html.contains("panel-token-1"), "the session of the mapped account is handed over");
-    assert!(html.contains("\"Id\":\"backend-1\""), "stored under the backend's own server ID");
+    assert!(
+        html.contains("<head><script>"),
+        "the script comes first in <head>: {html}"
+    );
+    assert!(
+        html.contains(&format!("jsw-backend-{id}:")),
+        "storage is scoped per backend"
+    );
+    assert!(
+        html.contains("panel-token-1"),
+        "the session of the mapped account is handed over"
+    );
+    assert!(
+        html.contains("\"Id\":\"backend-1\""),
+        "stored under the backend's own server ID"
+    );
     assert!(html.contains("\"UserId\":\"backend-user-1\""));
     assert!(html.contains("<title>Jellyfin</title>") && html.contains("<body>app</body>"));
-    assert!(!html.contains("alicepw") && !html.contains("\"password\""), "no password reaches the browser");
+    assert!(
+        !html.contains("alicepw") && !html.contains("\"password\""),
+        "no password reaches the browser"
+    );
 
     let upstream_page: Vec<_> = f
         .requests_without_admin_lookup(1)
@@ -415,7 +448,10 @@ async fn the_start_page_gets_its_own_storage_and_the_signed_in_session() {
     // The browser's own negotiation is not forwarded: the proxy's HTTP client asks for
     // (and transparently decodes) its own encoding, so the page arrives editable.
     assert_ne!(
-        upstream_page[0].headers.get("accept-encoding").map(|v| v.to_str().unwrap()),
+        upstream_page[0]
+            .headers
+            .get("accept-encoding")
+            .map(|v| v.to_str().unwrap()),
         Some("gzip, br")
     );
     assert!(upstream_page[0].headers.get("if-none-match").is_none());
@@ -548,8 +584,14 @@ async fn a_server_never_set_up_opens_for_the_proxy_administrator_without_an_acco
         .unwrap();
     assert_eq!(page.status(), StatusCode::OK);
     let html = page.text().await.unwrap();
-    assert!(html.contains(&format!("jsw-backend-{id}:")), "storage is still scoped");
-    assert!(html.contains("SEED = null"), "no session is handed over: there is none yet");
+    assert!(
+        html.contains(&format!("jsw-backend-{id}:")),
+        "storage is still scoped"
+    );
+    assert!(
+        html.contains("SEED = null"),
+        "no session is handed over: there is none yet"
+    );
     assert!(!html.contains("AccessToken"));
 
     // The wizard's own calls go through, unchanged.
@@ -636,7 +678,11 @@ async fn the_proxy_administrator_is_still_bound_by_the_account_they_mapped() {
         .send()
         .await
         .unwrap();
-    assert_eq!(no.status(), StatusCode::FORBIDDEN, "a mapped non-admin account is not bypassed");
+    assert_eq!(
+        no.status(),
+        StatusCode::FORBIDDEN,
+        "a mapped non-admin account is not bypassed"
+    );
     let yes = plain_client()
         .get(backend(&f, allowed, "web/"))
         .header("cookie", &cookie)
@@ -644,7 +690,10 @@ async fn the_proxy_administrator_is_still_bound_by_the_account_they_mapped() {
         .await
         .unwrap();
     assert_eq!(yes.status(), StatusCode::OK);
-    assert!(yes.text().await.unwrap().contains("panel-token-1"), "signed in with the mapped account");
+    assert!(
+        yes.text().await.unwrap().contains("panel-token-1"),
+        "signed in with the mapped account"
+    );
 }
 
 #[tokio::test]
@@ -658,14 +707,25 @@ async fn the_administrator_is_offered_set_up_for_a_new_server_and_open_for_the_o
     let (new_server, old_server) = (server_id(&f, 1).await, server_id(&f, 0).await);
 
     let for_admin = servers_page(&f, admin).await;
-    let set_up = for_admin.find(&format!("/ui/backend/{new_server}/web/")).expect("link to the new server");
-    let open = for_admin.find(&format!("/ui/backend/{old_server}/web/")).expect("link to the configured server");
+    let set_up = for_admin
+        .find(&format!("/ui/backend/{new_server}/web/"))
+        .expect("link to the new server");
+    let open = for_admin
+        .find(&format!("/ui/backend/{old_server}/web/"))
+        .expect("link to the configured server");
     assert!(for_admin[set_up..].contains("Set up"));
     assert!(for_admin[open..].contains("Open"));
-    assert_eq!(for_admin.matches("Set up").count(), 1, "only the new server says Set up");
+    assert_eq!(
+        for_admin.matches("Set up").count(),
+        1,
+        "only the new server says Set up"
+    );
 
     let for_user = servers_page(&f, other).await;
-    assert!(!for_user.contains("Set up") && !for_user.contains("/web/"), "an ordinary user is offered neither");
+    assert!(
+        !for_user.contains("Set up") && !for_user.contains("/web/"),
+        "an ordinary user is offered neither"
+    );
 }
 
 #[tokio::test]
@@ -675,7 +735,9 @@ async fn completing_the_wizard_turns_set_up_into_open_at_once() {
     // The first probe finds the wizard open; every later one finds it completed.
     Mock::given(method("GET"))
         .and(path("/System/Info/Public"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"StartupWizardCompleted": false})))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"StartupWizardCompleted": false})),
+        )
         .up_to_n_times(1)
         .with_priority(1)
         .mount(&f.upstreams[1])
@@ -690,7 +752,10 @@ async fn completing_the_wizard_turns_set_up_into_open_at_once() {
     let cookie = administrator_without_accounts(&f).await;
     let id = server_id(&f, 1).await;
 
-    assert!(servers_page(&f, cookie.clone()).await.contains("Set up"), "the wizard is open");
+    assert!(
+        servers_page(&f, cookie.clone()).await.contains("Set up"),
+        "the wizard is open"
+    );
     let finished = plain_client()
         .post(backend(&f, id, "Startup/Complete"))
         .header("cookie", &cookie)
@@ -701,6 +766,11 @@ async fn completing_the_wizard_turns_set_up_into_open_at_once() {
     // Not "within ten seconds": immediately, and the page keeps working for the next step.
     assert!(!servers_page(&f, cookie.clone()).await.contains("Set up"));
     mount_start_page(&f, 1).await;
-    let page = plain_client().get(backend(&f, id, "web/")).header("cookie", &cookie).send().await.unwrap();
+    let page = plain_client()
+        .get(backend(&f, id, "web/"))
+        .header("cookie", &cookie)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(page.status(), StatusCode::OK);
 }

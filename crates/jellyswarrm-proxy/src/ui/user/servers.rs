@@ -218,8 +218,8 @@ pub(crate) async fn get_user_servers(
     // The Administer button is for the servers where the account the user mapped is
     // an administrator. Signing in to each backend is cached, and one that is down
     // simply gets no button.
-    let administrator_ids: Vec<i64> = futures_util::future::join_all(
-        mapped_servers.iter().map(|server| async {
+    let administrator_ids: Vec<i64> =
+        futures_util::future::join_all(mapped_servers.iter().map(|server| async {
             state
                 .panel_identities
                 .get(&state, &user.id, server)
@@ -227,12 +227,11 @@ pub(crate) async fn get_user_servers(
                 .ok()
                 .filter(|identity| identity.is_administrator)
                 .map(|_| server.id.as_i64())
-        }),
-    )
-    .await
-    .into_iter()
-    .flatten()
-    .collect();
+        }))
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
 
     let setup_ids: Vec<i64> = if user.role == crate::ui::auth::UserRole::Admin {
         futures_util::future::join_all(unmapped_servers.iter().map(|server| async {

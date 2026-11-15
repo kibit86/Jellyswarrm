@@ -46,7 +46,11 @@ pub(crate) fn is_discovery_request(datagram: &[u8]) -> bool {
 
 /// The JSON answer for the current settings. The address must be a full URL:
 /// clients connect to exactly what is announced.
-pub(crate) fn discovery_response(public_address: &str, server_id: &str, server_name: &str) -> Vec<u8> {
+pub(crate) fn discovery_response(
+    public_address: &str,
+    server_id: &str,
+    server_name: &str,
+) -> Vec<u8> {
     let address = if public_address.contains("://") {
         public_address.to_owned()
     } else {
@@ -83,8 +87,11 @@ async fn serve_for(
             }
             // Read per request so renames and address changes apply at once.
             let current = settings.read().await;
-            let reply =
-                discovery_response(&current.public_address, &current.server_id, &current.server_name);
+            let reply = discovery_response(
+                &current.public_address,
+                &current.server_id,
+                &current.server_name,
+            );
             drop(current);
             if let Err(error) = socket.send_to(&reply, peer).await {
                 warn!(%peer, %error, "Could not answer discovery request");
@@ -184,7 +191,10 @@ mod tests {
     /// Ask on loopback and wait briefly for an answer.
     async fn ask(port: u16, text: &str) -> Option<String> {
         let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        client.send_to(text.as_bytes(), ("127.0.0.1", port)).await.unwrap();
+        client
+            .send_to(text.as_bytes(), ("127.0.0.1", port))
+            .await
+            .unwrap();
         let mut buffer = [0u8; 1024];
         match tokio::time::timeout(Duration::from_millis(600), client.recv_from(&mut buffer)).await
         {
@@ -197,7 +207,9 @@ mod tests {
     fn recognises_the_jellyfin_request_in_any_case_and_inside_other_bytes() {
         assert!(is_discovery_request(b"who is JellyfinServer?"));
         assert!(is_discovery_request(b"WHO IS JELLYFINSERVER?"));
-        assert!(is_discovery_request(b"\x00\x01 who is JellyfinServer? trailing"));
+        assert!(is_discovery_request(
+            b"\x00\x01 who is JellyfinServer? trailing"
+        ));
         assert!(!is_discovery_request(b"who is EmbyServer?"));
         assert!(!is_discovery_request(b""));
         assert!(!is_discovery_request(&[0xff, 0xfe, 0xfd]));
@@ -224,7 +236,9 @@ mod tests {
         let task = tokio::spawn(supervise(view, port, Duration::from_millis(50)));
         tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let reply = ask(port, "who is JellyfinServer?").await.expect("an answer");
+        let reply = ask(port, "who is JellyfinServer?")
+            .await
+            .expect("an answer");
         let value: serde_json::Value = serde_json::from_str(&reply).unwrap();
         assert_eq!(value["Id"], "abc123");
         assert_eq!(value["Address"], "http://192.0.2.10:8097");
@@ -247,7 +261,11 @@ mod tests {
             "disabled: no answer"
         );
         // The port is really released, so another server could take it.
-        drop(UdpSocket::bind(("0.0.0.0", port)).await.expect("port released"));
+        drop(
+            UdpSocket::bind(("0.0.0.0", port))
+                .await
+                .expect("port released"),
+        );
 
         config.write().await.autodiscovery = true;
         tokio::time::sleep(Duration::from_millis(250)).await;
@@ -298,7 +316,11 @@ mod tests {
         let port = free_udp_port().await;
         let task = tokio::spawn(supervise(view, port, Duration::from_millis(50)));
         tokio::time::sleep(Duration::from_millis(200)).await;
-        drop(UdpSocket::bind(("0.0.0.0", port)).await.expect("port untouched"));
+        drop(
+            UdpSocket::bind(("0.0.0.0", port))
+                .await
+                .expect("port untouched"),
+        );
         task.abort();
     }
 }

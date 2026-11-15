@@ -2358,7 +2358,11 @@ async fn first_start_creates_the_administrator_and_later_starts_leave_it_alone()
         .unwrap()
         .expect("a fresh database gets an administrator");
     assert!(service.is_admin(&admin.id).await.unwrap());
-    assert!(admin.local_credential.verify_async(&"first-password".into()).await.unwrap());
+    assert!(admin
+        .local_credential
+        .verify_async(&"first-password".into())
+        .await
+        .unwrap());
 
     // The database owns the password from now on: a different configured one does nothing.
     assert!(service

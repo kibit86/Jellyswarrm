@@ -93,17 +93,53 @@ async fn server_wide_administration_is_refused_even_for_administrators() {
     f.administrator_on(1, true).await;
 
     for (verb, route, expected) in [
-        (reqwest::Method::GET, "/System/Configuration", StatusCode::FORBIDDEN),
-        (reqwest::Method::POST, "/System/Configuration/encoding", StatusCode::FORBIDDEN),
-        (reqwest::Method::POST, "/System/Restart", StatusCode::FORBIDDEN),
-        (reqwest::Method::GET, "/Library/VirtualFolders", StatusCode::FORBIDDEN),
-        (reqwest::Method::POST, "/Library/Refresh", StatusCode::FORBIDDEN),
-        (reqwest::Method::GET, "/ScheduledTasks", StatusCode::FORBIDDEN),
+        (
+            reqwest::Method::GET,
+            "/System/Configuration",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            reqwest::Method::POST,
+            "/System/Configuration/encoding",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            reqwest::Method::POST,
+            "/System/Restart",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            reqwest::Method::GET,
+            "/Library/VirtualFolders",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            reqwest::Method::POST,
+            "/Library/Refresh",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            reqwest::Method::GET,
+            "/ScheduledTasks",
+            StatusCode::FORBIDDEN,
+        ),
         (reqwest::Method::GET, "/Plugins", StatusCode::FORBIDDEN),
-        (reqwest::Method::GET, "/sYsTem/%43onfiguration", StatusCode::FORBIDDEN),
+        (
+            reqwest::Method::GET,
+            "/sYsTem/%43onfiguration",
+            StatusCode::FORBIDDEN,
+        ),
         // The explicit /Users routes only serve GET, so these never reach a backend.
-        (reqwest::Method::POST, "/Users/New", StatusCode::METHOD_NOT_ALLOWED),
-        (reqwest::Method::DELETE, "/Users/some-user", StatusCode::METHOD_NOT_ALLOWED),
+        (
+            reqwest::Method::POST,
+            "/Users/New",
+            StatusCode::METHOD_NOT_ALLOWED,
+        ),
+        (
+            reqwest::Method::DELETE,
+            "/Users/some-user",
+            StatusCode::METHOD_NOT_ALLOWED,
+        ),
     ] {
         let response = f.request(verb, route, &f.user, "tv").send().await.unwrap();
         assert_eq!(response.status(), expected, "{route}");
@@ -165,7 +201,10 @@ async fn administrator_flag_means_administrator_on_any_backend() {
             .json()
             .await
             .unwrap();
-        assert_eq!(me["Policy"]["IsAdministrator"], expected, "admin on {admin_on:?}");
+        assert_eq!(
+            me["Policy"]["IsAdministrator"], expected,
+            "admin on {admin_on:?}"
+        );
     }
 }
 
@@ -261,7 +300,14 @@ async fn app_device(f: &Fixture, client: &str) -> String {
         version: "1".into(),
         token: None,
     };
-    for (index, server) in f.state.server_storage.list_servers().await.unwrap().iter().enumerate()
+    for (index, server) in f
+        .state
+        .server_storage
+        .list_servers()
+        .await
+        .unwrap()
+        .iter()
+        .enumerate()
     {
         f.state
             .user_authorization
