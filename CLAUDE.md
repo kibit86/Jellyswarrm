@@ -31,11 +31,12 @@ anyone — human or agent — who changes the code or ships a release.
 | Event | What runs |
 |---|---|
 | Commit on a branch | Nothing. |
-| Pull request to `main` | `ci.yml` (checks below) **and** `docker.yml` building the image for amd64+arm64 **without publishing**. |
-| Push (merge) to `main` | `docker.yml` calls `ci.yml` **once**; only if it is green the image is published as `edge` and `sha-<commit>`. |
+| Pull request to `main` | `ci.yml`: the checks below, then the image build for amd64+arm64 **without publishing**. |
+| Push (merge) to `main` | `ci.yml`: the same checks; only if **all** are green the image is published as `edge` and `sha-<commit>`. |
 | Push to `main` with a version in `Cargo.toml` that has **no tag yet** | The same, plus a **release**: the image is also published as `X.Y.Z`, `X.Y`, `X`, `latest`; then the tag `vX.Y.Z` and the GitHub Release are created on that commit (last step, so a tag only exists if all images do). |
 
-Safeguards in `docker.yml` (job `version`): the version must be exactly `X.Y.Z`; a version **lower** than the
+Everything is a single workflow, `.github/workflows/ci.yml` (jobs `build`, `dependencies`, `integration`, then `version`,
+`build-and-push`, `create-manifest`; publishing `needs:` all the checks). Safeguards (job `version`): the version must be exactly `X.Y.Z`; a version **lower** than the
 latest tag fails the run; if the tag already exists the run is a snapshot only (re-running is safe); one run per
 branch at a time (`concurrency`), so two quick merges cannot race for the same tag. A failing CI publishes
 nothing and creates no tag.
@@ -70,7 +71,7 @@ that cannot be undone). The fork follows its own numbering, independent of upstr
 
 ## What CI checks (`ci.yml`)
 
-Runs on every PR and on every push to `main` (called by `docker.yml`). All of it must pass.
+Runs on every PR and on every push to `main`. All of it must pass before anything is published.
 
 | Job | Commands |
 |---|---|
@@ -93,6 +94,51 @@ Warnings are errors in CI (`-D warnings`): an unused import fails the build.
   about 5 minutes per test; when you cannot run it locally, **let the PR run it and say so**.
 - `dev/e2e-fresh-install/` is a Docker + Playwright end-to-end check of the whole fresh-install flow
   (two Jellyfin servers, the proxy, Chrome); see its README. It is not part of CI.
+
+## Tests are part of the change
+
+A change is not done until its tests are. **Write or update the tests in the same PR, as you write the code**
+(for a bug: first a test that fails, then the fix). CI is the final check, not the place where you find out
+which tests you forgot: a PR that is fixed one red job at a time was not reviewed.
+
+### The test layers
+
+| Layer | Where | Runs | Needs |
+|---|---|---|---|
+| Unit and HTTP contract tests (mock backends, in-memory DB) | next to the code and `crates/jellyswarrm-proxy/src/http_tests/` | locally and in CI (`cargo test`) | Rust only |
+| Real-server integration test (two Jellyfin stacks, proxy as a process) | `crates/jellyswarrm-proxy/tests/server_integration.rs` | CI (`just integration-test`) | Docker, LFS media, built UI |
+| Browser tests (Chrome drives the proxy UI and the Jellyfin web client) | `crates/jellyswarrm-proxy/tests/browser/` | CI (`just browser-integration-test-docker`) | the above plus Chrome in containers |
+| Fresh-install end-to-end (whole account model, signed-in panels) | `dev/e2e-fresh-install/` | by hand, not in CI | Docker + Playwright |
+
+The last three are slow and are the ones that break unnoticed, because they live outside `src/`.
+
+### Before every push: review the tests against what you changed
+
+1. List what changed: `git diff --stat origin/main...` and look at **templates, config defaults, routes,
+   auth/account behaviour, migrations**.
+2. For each kind of change, look at the tests that touch it:
+
+| You changed | Review (grep for it) |
+|---|---|
+| A UI template: ids, classes, `hx-*`, form fields, the default page of a role | `tests/browser/*.rs` selectors (`grep -n 'locator\|wait_for_function\|hx-' tests/browser`), `dev/e2e-fresh-install/browser_e2e.py` |
+| A config default or a config key (`auto_create_users_on_login`, admin `username`/`password`, ports, discovery) | `write_proxy_config` in `tests/server_integration.rs`, `data/jellyswarrm.dev.toml`, `dev/README.md`, `docs/config.md` |
+| Who can log in, admin bootstrap, mapped accounts, admin rights | `tests/server_integration.rs` (logins, `IsAdministrator`), `tests/browser/login.rs` and `server_mapping.rs`, `http_tests/access.rs`, `admin_rights.rs` |
+| A route, a header, the pass-through | `http_tests/` (the matching file), `node scripts/scan-client-routes.cjs --check` |
+| A migration | tests that open a database; remember rule 6 above |
+| A name used by fixtures | The backends in the test stack have the users `test` and `admin`. The proxy's own administrator must **not** be named like a fixture user: the two collided once and the login failed with 401. |
+
+3. Update the tests that the change makes wrong, and **add** the ones for new behaviour (a new button, a new
+   role rule, a new setting). A removed UI element means removing the steps that clicked it.
+4. Run what you can locally: `cargo fmt --all`, the clippy command above, `cargo test --locked -p jellyswarrm-proxy --lib`.
+   Compile the external tests too (clippy with `--all-targets --all-features` does).
+5. In the PR description say which layers you ran and which you left to CI (integration, browser). Never imply a
+   layer passed that you did not run.
+6. If CI still finds a failure, do not just fix that one line: ask which **class** of test you skipped in step 2,
+   and review the whole class before pushing again.
+
+Known gaps (no automated test yet): the proxy-admin landing page ("My servers") and the **Administer / Set up /
+Open** buttons are only covered by the by-hand end-to-end in `dev/e2e-fresh-install/`. A browser test for them
+belongs in `tests/browser/` and is welcome.
 
 ## Where things are
 
@@ -132,6 +178,7 @@ are the usual conflict areas.
 
 ## Conventions
 
-- Keep PRs focused; describe what was and was **not** tested (for example "integration test left to CI").
+- Keep PRs focused; describe what was and was **not** tested (for example "integration test left to CI"), see
+  "Tests are part of the change".
 - Commits end with the usual attribution trailers when an AI assistant wrote them.
 - Do not commit secrets, local data (`/data`, `dev/data`) or build output (`target`, `ui/dist`).

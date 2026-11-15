@@ -19,6 +19,10 @@ use tokio::process::{Child, Command};
 
 const USERNAME: &str = "test";
 const PASSWORD: &str = "test";
+// The proxy's own administrator (created at first start). Not named like any fixture
+// user: the backends have an "admin" too, and the two must not collide.
+const PROXY_ADMIN_USERNAME: &str = "proxy-admin";
+const PROXY_ADMIN_PASSWORD: &str = "proxy-admin-password";
 const AUTHORIZATION: &str = "MediaBrowser Client=\"Jellyswarrm Integration Tests\", Device=\"Test Runner\", DeviceId=\"jellyswarrm-integration-tests\", Version=\"1.0.0\"";
 const DIRECT_AUTHORIZATION: &str = "MediaBrowser Client=\"Jellyswarrm Direct Integration Tests\", Device=\"Test Runner\", DeviceId=\"jellyswarrm-direct-integration-tests\", Version=\"1.0.0\"";
 const SEERR_AUTHORIZATION: &str =
@@ -635,7 +639,7 @@ fn write_proxy_config(
     deduplicate_media: bool,
 ) -> Result<()> {
     let mut config = format!(
-        "host = \"127.0.0.1\"\nport = {proxy_port}\ninclude_server_name_in_media = false\nmerge_libraries = true\ndeduplicate_media = {deduplicate_media}\nserver_background_check_interval_secs = 1\nauto_create_users_on_login = true\nusername = \"proxy-admin\"\npassword = \"proxy-admin-password\"\n"
+        "host = \"127.0.0.1\"\nport = {proxy_port}\ninclude_server_name_in_media = false\nmerge_libraries = true\ndeduplicate_media = {deduplicate_media}\nserver_background_check_interval_secs = 1\nauto_create_users_on_login = true\nusername = \"{PROXY_ADMIN_USERNAME}\"\npassword = \"{PROXY_ADMIN_PASSWORD}\"\n"
     );
     for (name, url, priority) in upstreams {
         config.push_str(&format!(

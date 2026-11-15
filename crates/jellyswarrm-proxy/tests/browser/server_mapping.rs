@@ -211,18 +211,13 @@ async fn run_mapping_scenario(name: &str, quick_connect: bool) -> Result<()> {
 }
 
 async fn create_local_user(page: &Page, base: &str) -> Result<()> {
-    login_to_ui(page, base, "admin", "jellyswarrm").await?;
+    login_to_ui(page, base, PROXY_ADMIN_USERNAME, PROXY_ADMIN_PASSWORD).await?;
     page.locator("a[hx-get='/ui/users']").click(None).await?;
     page.locator("#add-user input[name=username]")
         .fill(LOCAL_USERNAME, None)
         .await?;
     page.locator("#add-user input[name=password]")
         .fill(LOCAL_PASSWORD, None)
-        .await?;
-    // Federation would create mappings automatically; these tests specifically
-    // exercise the user's own server-linking controls.
-    page.locator("#add-user input[name=enable_federation]")
-        .click(None)
         .await?;
     page.locator("#add-user button[type=submit]")
         .click(None)
