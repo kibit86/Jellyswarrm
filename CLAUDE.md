@@ -35,9 +35,9 @@ anyone — human or agent — who changes the code or ships a release.
 | Push (merge) to `main` | `release.yml`: **no tests** (they ran on the PR); builds and publishes the image as `edge` and `sha-<commit>`. |
 | Push to `main` with a version in `Cargo.toml` that has **no tag yet** | The same, plus a **release**: the image is also published as `X.Y.Z`, `X.Y`, `X`, `latest`; then the tag `vX.Y.Z` and the GitHub Release are created on that commit (last step, so a tag only exists if all images do). |
 
-Two workflows with one job each way: `.github/workflows/ci.yml` (PR only: `build`, `dependencies`, `integration`) and
+Two workflows with one job each way: `.github/workflows/ci.yml` (PR only: `checks`, `dependencies`, `integration`) and
 `.github/workflows/release.yml` (push to `main` only: `version`, `build-and-push`, `create-manifest`). Because the merge
-does not re-run the tests, **`main` is protected**: only a PR with green, up-to-date checks `build`,
+does not re-run the tests, **`main` is protected**: only a PR with green, up-to-date checks `Checks (fmt, clippy, tests)`,
 `Dependency advisories and licenses` and `Docker integration test` can be merged; never push to `main` to get around it
 (a Dockerfile problem is found at merge time and publishes nothing). Safeguards in `release.yml` (job `version`): the version must be exactly `X.Y.Z`; a version **lower** than the
 latest tag fails the run; if the tag already exists the run is a snapshot only (re-running is safe); one run per
@@ -78,7 +78,7 @@ Runs on every PR (`ci.yml`), not on the push to `main`. All of it must be green 
 
 | Job | Commands |
 |---|---|
-| `build` | `python3 scripts/test-ui-build.py`; `cargo check --locked --workspace --all-targets --all-features`; `cargo test --locked --workspace`; UI build (`just ui`); `node scripts/scan-client-routes.cjs --check`; `cargo build --locked --workspace`; **`cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`**; **`cargo fmt --all -- --check`** |
+| `checks` | `python3 scripts/test-ui-build.py`; `cargo check --locked --workspace --all-targets --all-features`; `cargo test --locked --workspace`; UI build (`just ui`); `node scripts/scan-client-routes.cjs --check`; **`cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`**; **`cargo fmt --all -- --check`** |
 | `dependencies` | `cargo-deny` advisories and licenses |
 | `integration` | `just integration-test` (real Jellyfin servers in Docker Compose) and the containerized browser test |
 

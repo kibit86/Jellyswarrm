@@ -17,7 +17,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  checks:
+    name: Checks (fmt, clippy, tests)
     runs-on: ubuntu-latest
 
     steps:
@@ -62,9 +63,6 @@ jobs:
 
     - name: Check client HTTP route inventory
       run: node scripts/scan-client-routes.cjs --check
-
-    - name: Build
-      run: cargo build --locked --workspace --verbose
 
     - name: Lint (clippy)
       run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
