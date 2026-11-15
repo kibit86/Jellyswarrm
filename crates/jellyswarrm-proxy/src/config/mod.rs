@@ -122,6 +122,11 @@ fn default_deduplicate_media() -> bool {
     true
 }
 
+/// Like Jellyfin, answer "who is JellyfinServer?" broadcasts by default.
+fn default_autodiscovery() -> bool {
+    true
+}
+
 mod base64_serde {
     use super::*;
     use serde::de::Error as DeError;
@@ -220,6 +225,7 @@ define_fallback_deserializer!(
     bool,
     default_deduplicate_media
 );
+define_fallback_deserializer!(deserialize_autodiscovery, bool, default_autodiscovery);
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct PreconfiguredServer {
@@ -314,6 +320,15 @@ pub(crate) struct AppConfig {
         alias = "deduplicate_movies"
     )]
     pub(crate) deduplicate_media: bool,
+
+    /// Answer LAN discovery broadcasts (UDP 7359) so Jellyfin apps find the
+    /// proxy automatically, like a Jellyfin server does. Turn it off when
+    /// another server on this host should be the one that answers.
+    #[serde(
+        default = "default_autodiscovery",
+        deserialize_with = "deserialize_autodiscovery"
+    )]
+    pub(crate) autodiscovery: bool,
 }
 
 impl Default for AppConfig {
@@ -338,6 +353,7 @@ impl Default for AppConfig {
             auto_create_users_on_login: default_auto_create_users_on_login(),
             merge_libraries: default_merge_libraries(),
             deduplicate_media: default_deduplicate_media(),
+            autodiscovery: default_autodiscovery(),
         }
     }
 }
@@ -373,6 +389,7 @@ impl fmt::Debug for AppConfig {
                 &self.auto_create_users_on_login,
             )
             .field("deduplicate_media", &self.deduplicate_media)
+            .field("autodiscovery", &self.autodiscovery)
             .finish()
     }
 }

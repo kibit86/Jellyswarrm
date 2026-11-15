@@ -22,6 +22,12 @@ pub(crate) struct BackendAccessSnapshot {
     pub(crate) sessions: Option<Vec<(AuthorizationSession, Server)>>,
 }
 
+/// Sessions and access scope as they were before `restrict_to_servers`.
+pub(crate) struct RoutingState {
+    sessions: Option<Vec<(AuthorizationSession, Server)>>,
+    access_scope: Option<VirtualLibraryAccessScope>,
+}
+
 pub(crate) struct RequestContext {
     identity: CallerIdentity,
     /// Anonymous requests can retain legacy user metadata without authenticating.
@@ -141,6 +147,39 @@ impl RequestContext {
             }
         }
         Ok(())
+    }
+
+    /// Narrow routing to `allowed` backends: sessions and access scope both
+    /// lose every other server, so media owned only by a dropped server is
+    /// refused as foreign and aggregates resolve to an allowed member.
+    /// Returns the previous routing state, for `restore_routing`.
+    pub(crate) fn restrict_to_servers(
+        &mut self,
+        allowed: &std::collections::HashSet<ServerId>,
+    ) -> RoutingState {
+        let previous = RoutingState {
+            sessions: self.backends.sessions.clone(),
+            access_scope: self.access_scope.clone(),
+        };
+        if let Some(sessions) = &mut self.backends.sessions {
+            sessions.retain(|(_, server)| allowed.contains(&server.id));
+        }
+        if let Some(scope) = &self.access_scope {
+            self.access_scope = Some(VirtualLibraryAccessScope::new(
+                scope.user_id(),
+                scope
+                    .server_ids()
+                    .iter()
+                    .copied()
+                    .filter(|id| allowed.contains(id)),
+            ));
+        }
+        previous
+    }
+
+    pub(crate) fn restore_routing(&mut self, state: RoutingState) {
+        self.backends.sessions = state.sessions;
+        self.access_scope = state.access_scope;
     }
 
     /// Resolve exactly the requested owner. Missing availability never changes

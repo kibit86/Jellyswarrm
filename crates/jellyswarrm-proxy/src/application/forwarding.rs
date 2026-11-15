@@ -65,12 +65,15 @@ struct PlaybackReport {
 /// Choose and authorize the backend. Sends nothing and changes no state.
 pub(crate) async fn prepare(
     state: &MediaServices,
-    input: OperationRequest,
+    mut input: OperationRequest,
     action: Option<PlaybackSessionAction>,
 ) -> Result<PreparedForward, ApplicationError> {
     let path = state
         .remove_prefix(input.original_request.url().path())
         .to_owned();
+    if action.is_none() {
+        enforce_administrator_scope(state, &mut input, &path).await?;
+    }
     let mut normalized_request = input.original_request.try_clone().ok_or_else(|| {
         ApplicationError::Internal(anyhow::anyhow!("client request body is not buffered"))
     })?;
@@ -89,6 +92,55 @@ pub(crate) async fn prepare(
         target,
         report,
     })
+}
+
+/// Item management is allowed only on backends where the caller's own backend
+/// account is an administrator; server-wide administration is never served by
+/// the merged API (it has no single target). Backend pass-through callers and
+/// ordinary requests are untouched.
+async fn enforce_administrator_scope(
+    state: &MediaServices,
+    input: &mut OperationRequest,
+    path: &str,
+) -> Result<(), ApplicationError> {
+    use crate::application::admin_rights::{classify_request, AdminRequestClass};
+    use crate::application::request::context::Principal;
+
+    if input.context.principal() != Principal::ProxyUser {
+        return Ok(());
+    }
+    match classify_request(input.original_request.method(), path) {
+        AdminRequestClass::Regular => Ok(()),
+        AdminRequestClass::GlobalAdministration => Err(ApplicationError::AccessDenied),
+        class @ (AdminRequestClass::ItemManagement | AdminRequestClass::ItemWrite) => {
+            let sessions = input
+                .context
+                .backends()
+                .sessions
+                .as_deref()
+                .unwrap_or_default();
+            let allowed = state
+                .admin_rights
+                .administrator_servers(&state.reqwest_client, sessions)
+                .await;
+            if class == AdminRequestClass::ItemWrite {
+                // Prefer an administrator backend, but never turn a request the
+                // backend would authorize itself (own playlist) into a refusal.
+                if !allowed.is_empty() {
+                    let previous = input.context.restrict_to_servers(&allowed);
+                    if input.resolve_target(state).await.is_err() {
+                        input.context.restore_routing(previous);
+                    }
+                }
+                return Ok(());
+            }
+            if allowed.is_empty() {
+                return Err(ApplicationError::AccessDenied);
+            }
+            input.context.restrict_to_servers(&allowed);
+            Ok(())
+        }
+    }
 }
 
 /// Reports never use the generic best-server fallback: a wrong destination

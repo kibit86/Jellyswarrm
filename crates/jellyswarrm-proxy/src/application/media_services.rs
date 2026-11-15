@@ -38,6 +38,7 @@ pub(crate) struct MediaServices {
     pub(crate) translation: Arc<ProxyProcessors>,
     pub(crate) client_sessions: Arc<ClientSessionService>,
     pub(crate) catalog_snapshots: Arc<CatalogSnapshots>,
+    pub(crate) admin_rights: Arc<super::admin_rights::AdminRights>,
     /// Fixed at startup, like the router mount it mirrors.
     pub(crate) url_prefix: Option<String>,
 }
@@ -76,10 +77,28 @@ impl MediaServices {
             proxy_api_key: token.map(str::to_owned),
             profile,
         };
-        self.translation
+        let modified = self
+            .translation
             .process_response_json(payload, &context)
-            .await
-            .map_err(Into::into)
+            .await?;
+        // Tell the web client which items its viewer may manage.
+        // Only from what is already known: a response never waits for a lookup.
+        let annotated = match token {
+            Some(token) if profile != ResponseProcessingProfile::Disabled => {
+                match self
+                    .admin_rights
+                    .known_administrator_for_token(&self.user_authorization, token, server)
+                    .await
+                {
+                    Some(can_manage) => {
+                        super::admin_rights::annotate_can_manage(payload, can_manage)
+                    }
+                    None => false,
+                }
+            }
+            _ => false,
+        };
+        Ok(modified || annotated)
     }
 
     pub(crate) async fn execute_processed_json(

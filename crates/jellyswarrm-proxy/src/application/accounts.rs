@@ -38,6 +38,7 @@ pub(crate) struct AuthenticationService {
     pub(crate) settings: SettingsView,
     pub(crate) client_sessions: Arc<ClientSessionService>,
     pub(crate) mapping_authenticator: MappingAuthenticator,
+    pub(crate) admin_rights: Arc<super::admin_rights::AdminRights>,
 }
 
 /// A parsed caller credential, resolved without incoming-adapter or startup state.
@@ -68,14 +69,32 @@ pub(crate) async fn user_for_credential(
     authorization.get_user_by_token(token).await
 }
 
+/// Whether the caller is an administrator on at least one of their backends.
+/// Clients use this flag to show editing and dashboard entries; the proxy
+/// still refuses any management request aimed at a backend where they are not.
+async fn administrator_on_any_backend(state: &MediaServices, input: &OperationRequest) -> bool {
+    let sessions = input
+        .context
+        .backends()
+        .sessions
+        .as_deref()
+        .unwrap_or_default();
+    !state
+        .admin_rights
+        .administrator_servers(&state.reqwest_client, sessions)
+        .await
+        .is_empty()
+}
+
 async fn process_user(
     mut server_user: crate::protocol::models::User,
     user: &crate::auth::service::LocalUser,
     state: &MediaServices,
+    is_administrator: bool,
 ) -> crate::protocol::models::User {
     server_user.id = user.id.to_string();
     server_user.name = user.original_username.clone();
-    server_user.policy.is_administrator = false;
+    server_user.policy.is_administrator = is_administrator;
     server_user.server_id = state.config.read().await.server_id.clone();
     server_user
 }
@@ -98,7 +117,8 @@ pub(crate) async fn get_me(
     let server_user: crate::protocol::models::User =
         execute_json_request(&state.reqwest_client, request).await?;
 
-    Ok(process_user(server_user, user, state).await)
+    let is_administrator = administrator_on_any_backend(state, &input).await;
+    Ok(process_user(server_user, user, state, is_administrator).await)
 }
 
 pub(crate) async fn get_user_by_id(
@@ -118,7 +138,8 @@ pub(crate) async fn get_user_by_id(
     let server_user: crate::protocol::models::User =
         execute_json_request(&state.reqwest_client, request).await?;
 
-    Ok(process_user(server_user, user, state).await)
+    let is_administrator = administrator_on_any_backend(state, &input).await;
+    Ok(process_user(server_user, user, state, is_administrator).await)
 }
 
 fn normalize_user_path(request: &mut reqwest::Request, user_id: &str) {
@@ -401,13 +422,27 @@ pub(crate) async fn authenticate_by_name(
             resolve_or_create_login_user(state, &payload.username, &payload.password).await?;
 
         persist_successful_auths(state, &user, &authentication, &successful_auths).await?;
+        // The backends just told us who is an administrator there.
+        for successful in &successful_auths {
+            state
+                .admin_rights
+                .record(
+                    &successful.auth_response.access_token,
+                    successful.auth_response.user.policy.is_administrator,
+                )
+                .await;
+        }
 
+        let is_administrator = successful_auths
+            .iter()
+            .any(|auth| auth.auth_response.user.policy.is_administrator);
         let auth_response = decorate_auth_response(
             state,
             &user,
             &payload.username,
             &authentication,
             &successful_auths[0],
+            is_administrator,
         )
         .await;
 
@@ -502,6 +537,7 @@ async fn decorate_auth_response(
     login_username: &str,
     login_authorization: &Authorization,
     successful_auth: &SuccessfulServerAuth,
+    is_administrator: bool,
 ) -> AuthenticateResponse {
     let mut auth_response = successful_auth.auth_response.clone();
     let server_id = state.settings.read().await.server_id.clone();
@@ -511,9 +547,11 @@ async fn decorate_auth_response(
     auth_response.session_info.user_id = user.id.to_string();
     auth_response.user.name = login_username.to_string();
     auth_response.session_info.user_name = login_username.to_string();
-    // Seerr requires this flag to finish setup. Authorization remains enforced by
-    // Jellyswarrm and the user's real upstream sessions.
-    auth_response.user.policy.is_administrator = is_seerr_client(login_authorization);
+    // Seerr requires this flag to finish setup. For everyone else it means "an
+    // administrator on at least one backend"; authorization remains enforced by
+    // Jellyswarrm per backend and by the user's real upstream sessions.
+    auth_response.user.policy.is_administrator =
+        is_seerr_client(login_authorization) || is_administrator;
     auth_response.user.policy.sync_play_access = SyncPlayUserAccessType::CreateAndJoinGroups;
     auth_response.access_token = user.virtual_key.clone();
     auth_response.user.id = user.id.to_string();

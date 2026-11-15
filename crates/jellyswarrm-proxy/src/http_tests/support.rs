@@ -245,6 +245,33 @@ impl Fixture {
         ws
     }
 
+    /// Make backend `index` report the fixture user as (non-)administrator, as
+    /// the proxy's own `GET /Users/{id}` lookup sees it.
+    pub(crate) async fn administrator_on(&self, index: usize, administrator: bool) {
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path(format!("/Users/backend-user-{index}")))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(
+                json!({"Name":"alice","Policy":{"IsAdministrator":administrator}}),
+            ))
+            .mount(&self.upstreams[index])
+            .await;
+    }
+
+    /// Requests a backend received, without the proxy's administrator lookups
+    /// (`GET /Users/backend-user-*`).
+    pub(crate) async fn requests_without_admin_lookup(
+        &self,
+        index: usize,
+    ) -> Vec<wiremock::Request> {
+        self.upstreams[index]
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|request| !request.url.path().starts_with("/Users/backend-user-"))
+            .collect()
+    }
+
     pub(super) async fn healthy(&self) {
         for upstream in &self.upstreams {
             wiremock::Mock::given(wiremock::matchers::path("/System/Info/Public"))

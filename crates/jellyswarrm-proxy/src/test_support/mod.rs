@@ -91,6 +91,7 @@ impl MediaFixture {
             catalog_snapshots: Arc::new(
                 application::catalog::snapshots::CatalogSnapshots::default(),
             ),
+            admin_rights: Arc::new(application::admin_rights::AdminRights::new()),
             url_prefix,
         };
         Self { services, config }
@@ -108,6 +109,7 @@ impl MediaFixture {
                 self.reqwest_client.clone(),
                 self.config.read().await.password.clone(),
             ),
+            admin_rights: self.services.admin_rights.clone(),
         }
     }
 }

@@ -59,6 +59,7 @@ pub(super) async fn body_contract(route: &str, body: Value) {
         .expect(1)
         .mount(&f.upstreams[1])
         .await;
+    f.administrator_on(1, true).await;
     let mut request = f.request(reqwest::Method::POST, &client, &f.user, "tv");
     if !body.is_null() {
         request = request.json(&client_body);
@@ -73,7 +74,7 @@ pub(super) async fn body_contract(route: &str, body: Value) {
     if creates {
         assert_eq!(response.json::<Value>().await.unwrap()["Id"], f.items[1]);
     }
-    let requests = f.upstreams[1].received_requests().await.unwrap();
+    let requests = f.requests_without_admin_lookup(1).await;
     assert_eq!(requests.len(), 1, "{route}");
     assert!(requests[0]
         .headers
@@ -82,5 +83,5 @@ pub(super) async fn body_contract(route: &str, body: Value) {
         .to_str()
         .unwrap()
         .contains("backend-token-1"));
-    assert!(f.upstreams[0].received_requests().await.unwrap().is_empty());
+    assert!(f.requests_without_admin_lookup(0).await.is_empty());
 }

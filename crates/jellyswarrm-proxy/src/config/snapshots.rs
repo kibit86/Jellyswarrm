@@ -44,6 +44,7 @@ pub(crate) struct RuntimeSettings {
     pub(crate) auto_create_users_on_login: bool,
     pub(crate) merge_libraries: bool,
     pub(crate) deduplicate_media: bool,
+    pub(crate) autodiscovery: bool,
 }
 
 /// Read-only capability for request workflows. No administrator password,
@@ -111,6 +112,7 @@ impl AppConfig {
             auto_create_users_on_login: self.auto_create_users_on_login,
             merge_libraries: self.merge_libraries,
             deduplicate_media: self.deduplicate_media,
+            autodiscovery: self.autodiscovery,
         }
     }
 
@@ -123,6 +125,7 @@ impl AppConfig {
         self.auto_create_users_on_login = settings.auto_create_users_on_login;
         self.merge_libraries = settings.merge_libraries;
         self.deduplicate_media = settings.deduplicate_media;
+        self.autodiscovery = settings.autodiscovery;
     }
 }
 

@@ -212,6 +212,10 @@ async fn authenticate_and_register(
         )
         .await?;
     hooks.after_registration().await;
+    state
+        .admin_rights
+        .record(&response.access_token, response.user.policy.is_administrator)
+        .await;
 
     let server_id = state.settings.read().await.server_id.clone();
     response.server_id = server_id.clone();
@@ -221,7 +225,6 @@ async fn authenticate_and_register(
     response.user.name = user.original_username.clone();
     response.session_info.user_id = user.id.to_string();
     response.session_info.user_name = user.original_username.clone();
-    response.user.policy.is_administrator = false;
     response.user.policy.sync_play_access = SyncPlayUserAccessType::CreateAndJoinGroups;
     response.access_token = user.virtual_key.clone();
     crate::application::client_sessions::decorate_authentication(
@@ -338,6 +341,7 @@ mod tests {
                 reqwest::Client::new(),
                 config.password,
             ),
+            admin_rights: Default::default(),
         };
         let quick_connect = QuickConnectStorage::new();
         Mock::given(method("GET"))

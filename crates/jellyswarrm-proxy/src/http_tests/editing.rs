@@ -61,6 +61,7 @@ async fn editing_contract(verb: &str, route: &str, body: Value) {
         .expect(1)
         .mount(&f.upstreams[1])
         .await;
+    f.administrator_on(1, true).await;
     let mut request = f.request(
         verb.parse().unwrap(),
         &route.replace("{item}", &f.items[1]),
@@ -86,8 +87,8 @@ async fn editing_contract(verb: &str, route: &str, body: Value) {
     if reads {
         assert_eq!(response.json::<Value>().await.unwrap(), expected);
     }
-    assert!(f.upstreams[0].received_requests().await.unwrap().is_empty());
-    let requests = f.upstreams[1].received_requests().await.unwrap();
+    assert!(f.requests_without_admin_lookup(0).await.is_empty());
+    let requests = f.requests_without_admin_lookup(1).await;
     assert_eq!(requests.len(), 1, "{verb} {route}");
     assert!(requests[0]
         .headers

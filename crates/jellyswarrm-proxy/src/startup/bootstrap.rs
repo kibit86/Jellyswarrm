@@ -149,11 +149,14 @@ pub(crate) async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let session_store = SqliteStore::new(pool.clone());
     session_store.migrate().await?;
 
+    let settings_state: crate::http::state::SettingsState =
+        axum::extract::FromRef::from_ref(&app_state);
     let runtime = super::runtime::ApplicationRuntime::start(
         server_storage,
         axum::extract::FromRef::from_ref(&app_state),
         session_store.clone(),
         startup.server_background_check_interval_secs,
+        settings_state.settings,
     );
 
     // Create socket address
