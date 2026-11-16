@@ -167,6 +167,10 @@ pub(crate) struct AdminRights {
     cache: Cache<String, bool>,
     /// Lookups started recently, by `token@server`: no pile-up while one runs.
     refreshing: Cache<String, ()>,
+    /// Whether an unknown viewer is looked up in the background. On in production; off
+    /// in the test harness, so that tests counting backend requests do not depend on
+    /// when a background task runs (a test that needs it turns it on).
+    background_refresh: std::sync::atomic::AtomicBool,
 }
 
 impl Default for AdminRights {
@@ -186,7 +190,20 @@ impl AdminRights {
                 .time_to_live(REFRESH_GUARD)
                 .max_capacity(4096)
                 .build(),
+            background_refresh: std::sync::atomic::AtomicBool::new(!cfg!(test)),
         }
+    }
+
+    pub(crate) fn background_refresh_enabled(&self) -> bool {
+        self.background_refresh
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// For the test that exercises the background lookup itself.
+    #[cfg(test)]
+    pub(crate) fn enable_background_refresh(&self) {
+        self.background_refresh
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Fill the cache for the proxy user behind `token` on `server`: the backend

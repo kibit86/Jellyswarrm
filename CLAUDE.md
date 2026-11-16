@@ -107,6 +107,11 @@ Warnings are errors in CI (`-D warnings`): an unused import fails the build.
 - If Rust is not installed, use a container, e.g. `docker run --rm -v "$PWD":/src -w /src rust:1.99.1-alpine …`
   with `apk add musl-dev` (and `rustup component add clippy rustfmt`). Mount a volume on `/src/target`
   to keep the build cache. Files written by a root container are owned by root: `chown` them back.
+- **Races hide on a fast machine.** Work that runs in the background (a spawned task, a cache refresh) makes a test
+  that counts requests depend on timing: it passes locally and fails on CI, which is slower. Keep such work **off by
+  default in the test harness** (see `AdminRights::background_refresh`) and turn it on only in the test of the
+  feature itself. To see a race before CI does, run the suite on one core:
+  `docker run --cpus=1 …  cargo test --locked -p jellyswarrm-proxy --lib` (about 6 minutes).
 - `just integration-test` needs Docker, Git LFS media (`just media`) and a built UI (`just ui`, Node). It takes
   about 5 minutes per test; when you cannot run it locally, **let the PR run it and say so**.
 - `dev/e2e-fresh-install/` is a Docker + Playwright end-to-end check of the whole fresh-install flow

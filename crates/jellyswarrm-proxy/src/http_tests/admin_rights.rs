@@ -484,6 +484,9 @@ async fn the_backend_has_the_last_word_on_delete() {
 #[tokio::test]
 async fn an_unknown_viewer_is_not_claimed_to_manage_but_is_looked_up_in_the_background() {
     let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    // Off in the test harness (so request-counting tests are not racy); this is the test
+    // of the feature itself.
+    f.state.services.admin_rights.enable_background_refresh();
     f.healthy().await;
     f.administrator_on(0, false).await;
     f.administrator_on(1, true).await;

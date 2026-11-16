@@ -110,6 +110,9 @@ impl MediaServices {
     /// Look up the viewer's administrator flag on `server` without delaying the
     /// response being built. The result lands in the shared cache.
     fn refresh_administrator_in_background(&self, token: &str, server: &Server) {
+        if !self.admin_rights.background_refresh_enabled() {
+            return;
+        }
         let services = self.clone();
         let token = token.to_owned();
         let server = server.clone();
