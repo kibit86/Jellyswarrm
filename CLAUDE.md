@@ -153,9 +153,11 @@ The last three are slow and are the ones that break unnoticed, because they live
 6. If CI still finds a failure, do not just fix that one line: ask which **class** of test you skipped in step 2,
    and review the whole class before pushing again.
 
-Known gaps (no automated test yet): the proxy-admin landing page ("My servers") and the **Administer / Set up /
-Open** buttons are only covered by the by-hand end-to-end in `dev/e2e-fresh-install/`. A browser test for them
-belongs in `tests/browser/` and is welcome.
+The proxy-admin landing page ("My servers") and the **Administer / Set up / Open** buttons are covered by rendering
+tests in `ui/user/servers.rs` (who sees which button), by `tests/browser/server_mapping.rs`
+(`administrator_sees_their_servers_and_opens_the_signed_in_panels`, and the simple-user checks in the mapping test)
+and by the by-hand end-to-end in `dev/e2e-fresh-install/`. The "Set up" button needs a server whose first-run wizard is
+open, which the Docker fixtures never have: only the rendering test covers it.
 
 ## Where things are
 
@@ -181,8 +183,11 @@ Know these before touching the areas; each has tests under `src/http_tests/` or 
   `localStorage` per backend and seeds `jellyfin_credentials`. Cookies never cross; hop-by-hop headers go through
   the shared helpers (`prepare_request_headers`, `remove_hop_by_hop_headers`).
 - **Per-item admin rights** (`application/admin_rights.rs`, `patches/jellyfin-web/0001-per-item-management.patch`):
-  admin status is tracked per backend token; web clients are told `IsAdministrator=false`, item-management calls
-  are routed to the servers where the mapped account is an admin; global admin endpoints on the merged API are 403.
+  admin status is tracked per backend token (cached 6 hours; when unknown, a lookup runs in the background and the
+  response is never delayed); web clients are told `IsAdministrator=false`, item-management calls are routed to the
+  servers where the mapped account is an admin; global admin endpoints on the merged API are 403. Native apps read
+  `CanDelete`: `translation/response_processor.rs` forces it to `false` (inherited from upstream) except for playlists
+  and, since 1.3.0, for items of a server where the viewer administers, where the backend's own value is kept.
   Jellyfin 12 reads only the `Authorization` header (not `X-Emby-Authorization`).
 - **LAN discovery** (`discovery.rs`): answers Jellyfin's UDP 7359 broadcast; configurable (`autodiscovery`) and
   never fatal if the port is busy.

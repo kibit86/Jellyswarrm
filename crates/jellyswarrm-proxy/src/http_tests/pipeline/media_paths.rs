@@ -2,6 +2,7 @@
 //! Unlike the focused regressions, no library groups or media/source mappings
 //! are inserted directly into storage to make these workflows pass.
 use super::*;
+use crate::http_tests::support::received_without_bookkeeping;
 use wiremock::matchers::{header, query_param};
 
 const ITEM: &str = "11111111111111111111111111111111";
@@ -227,7 +228,7 @@ async fn mount_media(f: &Fixture, media: Media, mode: MediaStreamingMode) {
 async fn request_counts(f: &Fixture) -> Vec<usize> {
     let mut counts = Vec::new();
     for upstream in &f.upstreams {
-        counts.push(upstream.received_requests().await.unwrap().len());
+        counts.push(received_without_bookkeeping(upstream).await.len());
     }
     counts
 }
@@ -465,7 +466,7 @@ async fn media_path_contract(scenario: Scenario, media: Media, mode: MediaStream
     assert_eq!(played_owners.len(), 2);
     for (owner, upstream) in f.upstreams.iter().enumerate() {
         upstream.verify().await;
-        for request in upstream.received_requests().await.unwrap() {
+        for request in received_without_bookkeeping(upstream).await {
             let identity = format!("{:?} {}", request.headers, request.url);
             assert!(identity.contains(&format!("backend-token-{owner}")));
             assert!(!identity.contains(&f.user.virtual_key));

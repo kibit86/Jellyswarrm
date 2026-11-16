@@ -1,5 +1,6 @@
 //! Fan-out contracts exercise global requests independently of source-owned reads.
 use super::*;
+use crate::http_tests::support::received_without_bookkeeping;
 use wiremock::{
     matchers::{method, path},
     Mock, ResponseTemplate,
@@ -99,7 +100,7 @@ async fn discovery_contract(scenario: Scenario, route: &str) {
         }
     }
     for (index, upstream) in f.upstreams.iter().enumerate() {
-        let requests = upstream.received_requests().await.unwrap();
+        let requests = received_without_bookkeeping(upstream).await;
         assert_eq!(requests.len(), 1);
         assert!(requests[0]
             .headers

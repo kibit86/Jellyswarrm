@@ -138,6 +138,14 @@ async fn run_mapping_scenario(name: &str, quick_connect: bool) -> Result<()> {
             )
             .await?;
 
+            // A simple user is never offered a server's panels: their mapped account is an
+            // ordinary one on the backend, and "Open"/"Set up" are the administrator's.
+            page.wait_for_function(
+                "() => !!document.querySelector('#main-content table') && !document.querySelector('#main-content a[href*=\"/backend/\"]')",
+                None,
+            )
+            .await?;
+
             let db_path = fixture._proxy._data_dir.path().join("jellyswarrm.db");
             let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", db_path.display())).await?;
             let mapping = sqlx::query(
@@ -278,6 +286,169 @@ async fn ensure_backend_quick_connect_enabled(client: &Client, upstream: &str) -
         response.status().is_success(),
         "could not enable backend Quick Connect: {}",
         response.status()
+    );
+    Ok(())
+}
+
+fn row_js(server: &str) -> String {
+    format!(
+        "[...document.querySelectorAll('#main-content tr')].find(r => r.querySelector('th')?.textContent?.includes('{server}'))"
+    )
+}
+
+/// The proxy administrator lands on "My servers", can open a server that has no mapped
+/// account yet, connects the backend's administrator account, and then "Administer"
+/// opens that server's own dashboard already signed in (new tab, no second login).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Docker, Git LFS media, embedded Jellyfin Web, and Chrome"]
+async fn administrator_sees_their_servers_and_opens_the_signed_in_panels() -> Result<()> {
+    let fixture = ServerFixture::start(false).await?;
+    let playwright = Playwright::launch().await?;
+    let mut launch_options =
+        LaunchOptions::default().headless(std::env::var_os("JELLYSWARRM_BROWSER_HEADED").is_none());
+    launch_options = match std::env::var("JELLYSWARRM_CHROME_PATH") {
+        Ok(path) => launch_options.executable_path(path),
+        Err(_) => launch_options.channel("chrome".to_owned()),
+    };
+    let container_mode = std::env::var_os("JELLYSWARRM_BROWSER_CONTAINERS").is_some();
+    if !container_mode {
+        playwright_rs::install_browsers(Some(&["ffmpeg"])).await?;
+    }
+    let container = if container_mode {
+        Some(containers::ContainerBrowser::start().await?)
+    } else {
+        None
+    };
+    let browser = containers::launch(&playwright, launch_options, container.as_ref()).await?;
+    let result = async {
+        let context = browser.new_context().await?;
+        let page = prepare(&context, "panels").await?;
+        let artifacts = workspace_root().join("target/browser-test-artifacts/panels");
+        tokio::fs::create_dir_all(&artifacts).await?;
+        let mut result = tokio::time::timeout(
+            Duration::from_secs(240),
+            panels_scenario(&page, &fixture.proxy_url),
+        )
+        .await
+        .context("panels browser scenario exceeded four minutes")
+        .and_then(|result| result);
+        if result.is_err() {
+            if let Err(error) = page
+                .screenshot_to_file(&artifacts.join("panels.png"), None)
+                .await
+            {
+                eprintln!("Could not save panels screenshot: {error}");
+            }
+        }
+        if let Err(error) =
+            containers::save_trace(&context, container.as_ref(), artifacts.join("panels.zip")).await
+        {
+            eprintln!("Could not save panels trace: {error}");
+            if result.is_ok() {
+                result = Err(error.context("export panels trace"));
+            }
+        }
+        result
+    }
+    .await;
+    let closed = browser.close().await;
+    result?;
+    closed?;
+    Ok(())
+}
+
+async fn panels_scenario(page: &Page, base: &str) -> Result<()> {
+    let movies = row_js(TARGET_SERVER);
+
+    // The administrator lands on their own servers...
+    login_to_ui(page, base, PROXY_ADMIN_USERNAME, PROXY_ADMIN_PASSWORD).await?;
+    page.wait_for_function(
+        "() => document.querySelector('#main-content')?.textContent?.includes('Your Connected Servers')",
+        None,
+    )
+    .await?;
+    // ...and, with no mapped account yet, can open any server on its own page (new tab).
+    // The fixture servers are all set up, so it is "Open", never "Set up", and there is
+    // no dashboard to administer yet.
+    page.wait_for_function(
+        &format!(
+            r##"() => {{ const row = {movies}; const open = row?.querySelector('a[role=button][href$="/web/"]'); return !!open && open.target === '_blank' && !/Set up/.test(row.textContent) && !row.querySelector('a[href*="#/dashboard"]'); }}"##
+        ),
+        None,
+    )
+    .await?;
+    let open_href = page
+        .evaluate_value(&format!(
+            r#"{movies}.querySelector('a[role=button][href$="/web/"]').getAttribute('href')"#
+        ))
+        .await?;
+    let open_href = open_href.trim_matches('"').to_owned();
+    anyhow::ensure!(
+        open_href.starts_with("/ui/backend/") && open_href.ends_with("/web/"),
+        "unexpected Open link: {open_href}"
+    );
+    page.goto(&format!("{base}{open_href}"), None).await?;
+    // The backend's own client is served under the proxy, with its storage kept apart.
+    page.wait_for_function(
+        "() => document.documentElement.outerHTML.includes('jsw-backend-')",
+        None,
+    )
+    .await?;
+
+    // Connect the backend's administrator account to the proxy administrator.
+    page.goto(&format!("{base}/ui"), None).await?;
+    page.wait_for_function(
+        "() => typeof window.openConnectModal === 'function' && !!document.querySelector('#main-content #connect_modal')",
+        None,
+    )
+    .await?;
+    page.locator("#main-content tr:has(th:has-text('Movies 1'))")
+        .locator(".connect-button")
+        .click(None)
+        .await?;
+    page.locator("#connect_form input[name=username]")
+        .fill("admin", None)
+        .await?;
+    page.locator("#connect_form input[name=password]")
+        .fill("password", None)
+        .await?;
+    page.locator("#connect_form button[type=submit]")
+        .click(None)
+        .await?;
+
+    // The server moves to "Your Connected Servers" and, as the mapped account administers
+    // it, now has "Administer" (new tab, straight to the dashboard).
+    page.wait_for_function(
+        &format!(
+            r##"() => {{ const row = {movies}; const link = row?.querySelector('a[href$="#/dashboard"]'); return !!row?.querySelector('button[hx-delete*="/user/servers/"]') && !!link && link.target === '_blank'; }}"##
+        ),
+        None,
+    )
+    .await?;
+    let administer = page
+        .evaluate_value(&format!(
+            r##"{movies}.querySelector('a[href$="#/dashboard"]').getAttribute('href')"##
+        ))
+        .await?;
+    let administer = administer.trim_matches('"').to_owned();
+    anyhow::ensure!(
+        administer.starts_with("/ui/backend/") && administer.ends_with("/web/#/dashboard"),
+        "unexpected Administer link: {administer}"
+    );
+
+    // Opening it hands the page the mapped account's session: no second login.
+    page.goto(&format!("{base}{administer}"), None).await?;
+    page.wait_for_function(
+        r#"() => { try { const c = JSON.parse(localStorage.getItem('jellyfin_credentials')); return !!(c && c.Servers && c.Servers[0] && c.Servers[0].AccessToken); } catch (_) { return false; } }"#,
+        None,
+    )
+    .await?;
+    // The client stays on the dashboard instead of falling back to a sign-in page.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    let hash = page.evaluate_value("location.hash").await?;
+    anyhow::ensure!(
+        hash.contains("dashboard"),
+        "the dashboard did not stay open, location.hash = {hash}"
     );
     Ok(())
 }

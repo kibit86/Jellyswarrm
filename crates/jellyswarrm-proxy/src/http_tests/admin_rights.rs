@@ -357,3 +357,154 @@ async fn the_web_client_reads_items_while_native_apps_get_the_global_flag() {
         assert_eq!(me["Policy"]["IsAdministrator"], expected_flag, "{client}");
     }
 }
+
+// --- Native apps: the backend's "can delete" answer, for administrators --------------
+
+/// Every backend answers `GET /Items/{id}` with an item of `kind` that the backend
+/// itself says the viewer may delete and download.
+async fn mount_deletable_item(f: &Fixture, kind: &str) {
+    for index in 0..2 {
+        let original = f.original(index).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/Items/{original}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "Id": original, "Type": kind, "Name": "Item", "ServerId": "backend",
+                "CanDelete": true, "CanDownload": true
+            })))
+            .mount(&f.upstreams[index])
+            .await;
+    }
+}
+
+/// What the proxy tells the viewer about the item that lives on backend `index`.
+async fn item_for_viewer(f: &Fixture, index: usize) -> Value {
+    let route = format!("/Items/{}", f.items[index]);
+    f.request(reqwest::Method::GET, &route, &f.user, "tv")
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()
+}
+
+/// The app asks who the viewer is right after login; that is how the proxy learns
+/// which backends the viewer administers (backend 1 here, not backend 0).
+async fn viewer_logs_in(f: &Fixture) {
+    for index in 0..2 {
+        Mock::given(method("GET"))
+            .and(path("/Users/Me"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "Id": format!("backend-user-{index}"), "Name": "alice", "ServerId": "backend",
+                "Policy": {"IsAdministrator": index == 1, "SyncPlayAccess": "None"}
+            })))
+            .mount(&f.upstreams[index])
+            .await;
+    }
+    let me = f
+        .request(reqwest::Method::GET, "/Users/Me", &f.user, "tv")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(me.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn apps_get_the_backends_delete_answer_for_every_kind_of_item_where_the_viewer_administers() {
+    for kind in [
+        "Movie",
+        "Series",
+        "Season",
+        "Episode",
+        "MusicAlbum",
+        "Audio",
+        "BoxSet",
+    ] {
+        let f = Fixture::for_scenario(Scenario::NormalServers).await;
+        f.healthy().await;
+        f.administrator_on(0, false).await;
+        f.administrator_on(1, true).await;
+        mount_deletable_item(&f, kind).await;
+        viewer_logs_in(&f).await;
+
+        let administered = item_for_viewer(&f, 1).await;
+        assert_eq!(administered["CanDelete"], true, "{kind}: {administered}");
+        let other = item_for_viewer(&f, 0).await;
+        assert_eq!(
+            other["CanDelete"], false,
+            "{kind}: a backend where the viewer is not an administrator offers no delete: {other}"
+        );
+        // Downloads stay off everywhere: the proxy does not serve them.
+        assert_eq!(administered["CanDownload"], false, "{kind}");
+        assert_eq!(other["CanDownload"], false, "{kind}");
+    }
+}
+
+#[tokio::test]
+async fn library_views_are_never_offered_for_deletion() {
+    for kind in ["UserView", "CollectionFolder"] {
+        let f = Fixture::for_scenario(Scenario::NormalServers).await;
+        f.healthy().await;
+        f.administrator_on(0, false).await;
+        f.administrator_on(1, true).await;
+        mount_deletable_item(&f, kind).await;
+        viewer_logs_in(&f).await;
+
+        let view = item_for_viewer(&f, 1).await;
+        assert_eq!(view["CanDelete"], false, "{kind}: {view}");
+    }
+}
+
+#[tokio::test]
+async fn the_backend_has_the_last_word_on_delete() {
+    // An administrator whose backend account may not delete (the Jellyfin permission
+    // "allow media deletion") must not be offered it: the backend's `false` is kept.
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    f.administrator_on(0, false).await;
+    f.administrator_on(1, true).await;
+    for index in 0..2 {
+        let original = f.original(index).await;
+        Mock::given(method("GET"))
+            .and(path(format!("/Items/{original}")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "Id": original, "Type": "Movie", "Name": "Item", "ServerId": "backend",
+                "CanDelete": false, "CanDownload": false
+            })))
+            .mount(&f.upstreams[index])
+            .await;
+    }
+    viewer_logs_in(&f).await;
+
+    let item = item_for_viewer(&f, 1).await;
+    assert_eq!(item["CanDelete"], false, "{item}");
+    assert_eq!(item["JellyswarrmCanManage"], true, "{item}");
+}
+
+#[tokio::test]
+async fn an_unknown_viewer_is_not_claimed_to_manage_but_is_looked_up_in_the_background() {
+    let f = Fixture::for_scenario(Scenario::NormalServers).await;
+    f.healthy().await;
+    f.administrator_on(0, false).await;
+    f.administrator_on(1, true).await;
+    mount_deletable_item(&f, "Movie").await;
+
+    // Nothing is known yet (no login seen by this proxy process): the answer is
+    // not delayed and claims nothing.
+    let first = item_for_viewer(&f, 1).await;
+    assert_eq!(first["CanDelete"], false, "{first}");
+    assert!(first.get("JellyswarrmCanManage").is_none(), "{first}");
+
+    // The lookup that run started in the background lands in the cache, so a
+    // following screen of the same app has the flag.
+    let mut later = first;
+    for _ in 0..60 {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        later = item_for_viewer(&f, 1).await;
+        if later["CanDelete"] == true {
+            break;
+        }
+    }
+    assert_eq!(later["CanDelete"], true, "{later}");
+    assert_eq!(later["JellyswarrmCanManage"], true, "{later}");
+}

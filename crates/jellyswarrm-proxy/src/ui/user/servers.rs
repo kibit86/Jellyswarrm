@@ -488,3 +488,119 @@ pub(crate) async fn check_user_server_status(
             .into_response(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{config::MediaStreamingMode, domain::ids::ServerId, servers::url::ServerUrl};
+    use askama::Template;
+
+    fn server(id: i64, name: &str) -> Server {
+        Server {
+            id: ServerId::new(id),
+            name: name.into(),
+            url: ServerUrl::parse("http://backend.invalid").unwrap(),
+            priority: 100,
+            media_streaming_mode: MediaStreamingMode::Proxy,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    /// The "My servers" page: `connected` are the servers with a mapped account,
+    /// `available` the ones without; `administrator_ids` where the mapped account
+    /// administers, `setup_ids` the available servers never set up.
+    fn page(
+        is_admin: bool,
+        connected: Vec<Server>,
+        available: Vec<Server>,
+        administrator_ids: Vec<i64>,
+        setup_ids: Vec<i64>,
+    ) -> String {
+        UserServerListTemplate {
+            username: "alice".into(),
+            servers: connected,
+            unmapped_servers: available,
+            administrator_ids,
+            is_admin,
+            setup_ids,
+            ui_route: "ui".into(),
+        }
+        .render()
+        .unwrap()
+    }
+
+    fn count(html: &str, needle: &str) -> usize {
+        html.matches(needle).count()
+    }
+
+    #[test]
+    fn administer_is_offered_only_where_the_mapped_account_administers() {
+        let html = page(
+            false,
+            vec![server(1, "Alpha"), server(2, "Beta")],
+            vec![],
+            vec![2],
+            vec![],
+        );
+        assert_eq!(count(&html, "Administer"), 1, "{html}");
+        assert!(html.contains(r#"href="/ui/backend/2/web/#/dashboard""#));
+        assert!(!html.contains("/ui/backend/1/web/"));
+        // Opens in a new tab, like every panel button.
+        assert!(html.contains(r#"target="_blank""#));
+    }
+
+    #[test]
+    fn a_simple_user_never_gets_open_or_set_up() {
+        let html = page(false, vec![], vec![server(3, "Gamma")], vec![], vec![3]);
+        assert!(!html.contains("Set up"), "{html}");
+        assert!(
+            !html.contains(">Open<") && !html.contains("Open\n"),
+            "{html}"
+        );
+        assert!(!html.contains("/ui/backend/3/web/"), "{html}");
+        // But they can still connect their own account.
+        assert!(html.contains("connect-button"));
+    }
+
+    #[test]
+    fn the_administrator_opens_unmapped_servers_and_sets_up_new_ones() {
+        let html = page(
+            true,
+            vec![],
+            vec![server(4, "Ready"), server(5, "Brand new")],
+            vec![],
+            vec![5],
+        );
+        // A set-up server: "Set up" for the new one, "Open" for the other.
+        assert_eq!(count(&html, "Set up"), 1, "{html}");
+        assert_eq!(count(&html, "/ui/backend/5/web/"), 1);
+        assert_eq!(count(&html, "/ui/backend/4/web/"), 1);
+        assert!(html.contains("Open"), "{html}");
+        // Both are a new tab, neither is the dashboard.
+        assert!(!html.contains("#/dashboard"));
+        assert!(html.matches(r#"target="_blank" rel="noopener""#).count() >= 2);
+    }
+
+    #[test]
+    fn the_administrator_gets_both_administer_and_open_on_their_page() {
+        let html = page(
+            true,
+            vec![server(1, "Alpha")],
+            vec![server(2, "Beta")],
+            vec![1],
+            vec![],
+        );
+        assert!(
+            html.contains(r#"href="/ui/backend/1/web/#/dashboard""#),
+            "{html}"
+        );
+        assert!(html.contains(r#"href="/ui/backend/2/web/""#), "{html}");
+    }
+
+    #[test]
+    fn an_empty_list_says_so() {
+        let html = page(true, vec![], vec![], vec![], vec![]);
+        assert!(html.contains("No Servers Connected"), "{html}");
+    }
+}

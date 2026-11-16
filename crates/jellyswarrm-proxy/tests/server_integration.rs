@@ -158,6 +158,113 @@ async fn user_can_login_browse_merged_libraries_and_stream_mapped_media() -> Res
     Ok(())
 }
 
+/// Native apps read `CanDelete` on every item to decide whether to offer "Delete".
+/// The proxy passes on the backend's own answer, but only to a viewer who is an
+/// administrator on that backend; everyone else is told `false`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Docker and the Git LFS media fixtures"]
+async fn apps_are_offered_delete_only_to_administrators_whose_backend_allows_it() -> Result<()> {
+    let fixture = ServerFixture::start(false).await?;
+    let ServerFixture {
+        client, proxy_url, ..
+    } = &fixture;
+    for (_, upstream, _) in upstream_urls(&fixture._compose).await? {
+        allow_media_deletion(client, &upstream).await?;
+    }
+
+    // The fixture's backend administrator, signed in through the proxy.
+    let admin =
+        success_json(login_as(client, proxy_url, "admin", "password", AUTHORIZATION).await?)
+            .await?;
+    let admin_flags = movies_can_delete(client, proxy_url, &admin).await?;
+    assert!(!admin_flags.is_empty(), "no movies were listed");
+    assert!(
+        admin_flags.iter().all(|flag| *flag == Some(true)),
+        "an administrator whose backend allows deletion is offered it: {admin_flags:?}"
+    );
+
+    // An ordinary backend user: the backend says no, so does the proxy.
+    let ordinary = success_json(login(client, proxy_url, PASSWORD).await?).await?;
+    let ordinary_flags = movies_can_delete(client, proxy_url, &ordinary).await?;
+    assert!(!ordinary_flags.is_empty(), "no movies were listed");
+    assert!(
+        ordinary_flags.iter().all(|flag| *flag == Some(false)),
+        "a viewer who is not an administrator is never offered deletion: {ordinary_flags:?}"
+    );
+    Ok(())
+}
+
+/// Give the fixture administrator the Jellyfin permission "allow media deletion"
+/// (from all libraries) on one backend, directly.
+async fn allow_media_deletion(client: &Client, upstream: &str) -> Result<()> {
+    let admin =
+        success_json(login_as(client, upstream, "admin", "password", DIRECT_AUTHORIZATION).await?)
+            .await?;
+    let token = required_string(&admin, "/AccessToken")?;
+    let user_id = required_string(&admin, "/User/Id")?;
+    let mut policy = admin["User"]["Policy"].clone();
+    anyhow::ensure!(
+        policy.is_object(),
+        "backend login returned no policy: {admin}"
+    );
+    policy["EnableContentDeletion"] = true.into();
+    policy["EnableContentDeletionFromFolders"] = json!([]);
+    let response = client
+        .post(format!("{upstream}/Users/{user_id}/Policy"))
+        .header(
+            "Authorization",
+            format!("{DIRECT_AUTHORIZATION}, Token=\"{token}\""),
+        )
+        .json(&policy)
+        .send()
+        .await?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "could not allow media deletion on {upstream}: {}",
+        response.status()
+    );
+    Ok(())
+}
+
+/// What the proxy tells this signed-in viewer about deleting each movie.
+async fn movies_can_delete(
+    client: &Client,
+    proxy_url: &str,
+    login: &Value,
+) -> Result<Vec<Option<bool>>> {
+    let token = required_string(login, "/AccessToken")?;
+    let user_id = required_string(login, "/User/Id")?;
+    let views = wait_for_views(client, proxy_url, user_id, token).await?;
+    wait_for_library_items(
+        client,
+        proxy_url,
+        user_id,
+        token,
+        &views,
+        ("Movies", "Movie", &expected_movie_names()),
+    )
+    .await?;
+    let mut flags = Vec::new();
+    for view_id in item_ids_named(&views, "Movies")? {
+        let movies = fetch_items(
+            client,
+            proxy_url,
+            user_id,
+            token,
+            view_id,
+            "Movie",
+            "CanDelete",
+        )
+        .await?;
+        flags.extend(
+            items(&movies)?
+                .iter()
+                .map(|movie| movie["CanDelete"].as_bool()),
+        );
+    }
+    Ok(flags)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Docker and the Git LFS media fixtures"]
 async fn saved_playlists_support_lifecycle_sharing_and_reject_mixed_servers() -> Result<()> {

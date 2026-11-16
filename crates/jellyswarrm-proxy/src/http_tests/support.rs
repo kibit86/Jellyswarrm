@@ -274,16 +274,7 @@ impl Fixture {
         &self,
         index: usize,
     ) -> Vec<wiremock::Request> {
-        self.upstreams[index]
-            .received_requests()
-            .await
-            .unwrap()
-            .into_iter()
-            .filter(|request| {
-                !request.url.path().starts_with("/Users/backend-user-")
-                    && request.url.path() != "/Users/AuthenticateByName"
-            })
-            .collect()
+        received_without_bookkeeping(&self.upstreams[index]).await
     }
 
     pub(super) async fn healthy(&self) {
@@ -312,4 +303,39 @@ impl Fixture {
             .original_media_id
             .into_string()
     }
+}
+
+/// Requests a backend received, without the proxy's own bookkeeping calls (the
+/// administrator lookups and the sign-in with the mapped account). Tests that count
+/// what a client request cost a backend count with this: the lookups depend on what
+/// the proxy already knows about the viewer, and may run in the background.
+pub(crate) async fn received_without_bookkeeping(
+    server: &wiremock::MockServer,
+) -> Vec<wiremock::Request> {
+    server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|request| !is_bookkeeping(request))
+        .collect()
+}
+
+/// The proxy's own bookkeeping calls to a backend: the administrator lookup, which
+/// is `GET /Users/{backend user}` (no further path: the legacy catalog routes
+/// `/Users/{id}/Items/...` are real client requests) sent as the proxy itself
+/// (`DeviceId="jellyswarrm-proxy"`), and the mapped-account sign-in.
+fn is_bookkeeping(request: &wiremock::Request) -> bool {
+    let path = request.url.path();
+    let sent_by_the_proxy = request
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains("DeviceId=\"jellyswarrm-proxy\""));
+    let lookup = request.method == wiremock::http::Method::GET
+        && sent_by_the_proxy
+        && path
+            .strip_prefix("/Users/")
+            .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'));
+    lookup || path == "/Users/AuthenticateByName"
 }
