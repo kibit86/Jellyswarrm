@@ -64,7 +64,12 @@ the usual client menus, on the servers where the mapped account is an administra
 How clients learn what to show:
 
 - **Native apps** see `IsAdministrator = true` when the mapped account is an
-  administrator on at least one server, and get a 403 on items elsewhere.
+  administrator on at least one server, and get a 403 on items elsewhere. They read
+  `CanDelete` on every item to decide whether to offer "Delete": the proxy passes on
+  the backend's own answer for items of a server where the mapped account is an
+  administrator (so the Jellyfin permission "allow media deletion" still applies), and
+  tells `false` everywhere else, for library views, and for downloads. Deleting a title
+  that exists on two servers removes the copy on the server where the account administers.
 - **The bundled web client** is told `false` and reads `JellyswarrmCanManage` on
   every item (needs `patches/jellyfin-web/*.patch`, applied by the `Dockerfile`).
 

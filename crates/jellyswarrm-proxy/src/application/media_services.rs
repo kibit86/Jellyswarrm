@@ -71,34 +71,62 @@ impl MediaServices {
         profile: ResponseProcessingProfile,
         token: Option<&str>,
     ) -> Result<bool, ApplicationError> {
+        // Whether the viewer may manage this backend's items. Only from what is
+        // already known: a response never waits for a lookup. When nothing is
+        // known yet (first request after a restart, or an expired entry) the
+        // lookup runs in the background so the next response can say.
+        let can_manage = match token {
+            Some(token) if profile != ResponseProcessingProfile::Disabled => {
+                let known = self
+                    .admin_rights
+                    .known_administrator_for_token(&self.user_authorization, token, server)
+                    .await;
+                if known.is_none() {
+                    self.refresh_administrator_in_background(token, server);
+                }
+                known
+            }
+            _ => None,
+        };
         let context = ResponseProcessingContext {
             server: server.clone(),
             proxy_server_id: self.config.read().await.server_id.clone(),
             proxy_api_key: token.map(str::to_owned),
             profile,
+            viewer_can_manage: can_manage == Some(true),
         };
         let modified = self
             .translation
             .process_response_json(payload, &context)
             .await?;
         // Tell the web client which items its viewer may manage.
-        // Only from what is already known: a response never waits for a lookup.
-        let annotated = match token {
-            Some(token) if profile != ResponseProcessingProfile::Disabled => {
-                match self
-                    .admin_rights
-                    .known_administrator_for_token(&self.user_authorization, token, server)
-                    .await
-                {
-                    Some(can_manage) => {
-                        super::admin_rights::annotate_can_manage(payload, can_manage)
-                    }
-                    None => false,
-                }
-            }
-            _ => false,
+        let annotated = match can_manage {
+            Some(can_manage) => super::admin_rights::annotate_can_manage(payload, can_manage),
+            None => false,
         };
         Ok(modified || annotated)
+    }
+
+    /// Look up the viewer's administrator flag on `server` without delaying the
+    /// response being built. The result lands in the shared cache.
+    fn refresh_administrator_in_background(&self, token: &str, server: &Server) {
+        if !self.admin_rights.background_refresh_enabled() {
+            return;
+        }
+        let services = self.clone();
+        let token = token.to_owned();
+        let server = server.clone();
+        tokio::spawn(async move {
+            services
+                .admin_rights
+                .refresh_for_token(
+                    &services.reqwest_client,
+                    &services.user_authorization,
+                    &token,
+                    &server,
+                )
+                .await;
+        });
     }
 
     pub(crate) async fn execute_processed_json(

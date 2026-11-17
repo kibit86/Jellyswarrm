@@ -148,6 +148,10 @@ pub(crate) struct ResponseProcessingContext {
     pub(crate) proxy_server_id: String,
     pub(crate) proxy_api_key: Option<String>,
     pub(crate) profile: ResponseProcessingProfile,
+    /// The viewer is an administrator on this backend: the backend's own
+    /// `CanDelete` answer is kept instead of being forced to `false`, so native
+    /// apps (which read that field) offer "Delete" where the backend allows it.
+    pub(crate) viewer_can_manage: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -285,15 +289,16 @@ impl JsonProcessor<ResponseProcessingContext> for ResponseProcessor {
         } else if context.rewrites_media_fields()
             && DISABLED_BOOL_FIELDS.contains(&json_context.key)
         {
-            let is_playlist = json_context
+            let item_type = json_context
                 .parent_object
                 .as_ref()
                 .and_then(|object| object.get("Type"))
-                .and_then(Value::as_str)
-                .is_some_and(|kind| kind.eq_ignore_ascii_case("Playlist"));
-            if value.is_boolean()
-                && !(json_context.key.eq_ignore_ascii_case("CanDelete") && is_playlist)
-            {
+                .and_then(Value::as_str);
+            let is_playlist = item_type.is_some_and(|kind| kind.eq_ignore_ascii_case("Playlist"));
+            let keep = json_context.key.eq_ignore_ascii_case("CanDelete")
+                && (is_playlist
+                    || (context.viewer_can_manage && backend_can_delete_applies(item_type)));
+            if value.is_boolean() && !keep {
                 *value = Value::Bool(false);
                 result = result.mark_modified();
             }
@@ -307,6 +312,15 @@ impl JsonProcessor<ResponseProcessingContext> for ResponseProcessor {
 
         result
     }
+}
+
+/// Library views are not media: deleting one is never offered, whatever the
+/// backend says. Every real item (movie, series, season, episode, album, track,
+/// ...) keeps the backend's answer for an administrator.
+fn backend_can_delete_applies(item_type: Option<&str>) -> bool {
+    !item_type.is_some_and(|kind| {
+        kind.eq_ignore_ascii_case("UserView") || kind.eq_ignore_ascii_case("CollectionFolder")
+    })
 }
 
 fn should_remap_map_value(parent_path: &str) -> bool {

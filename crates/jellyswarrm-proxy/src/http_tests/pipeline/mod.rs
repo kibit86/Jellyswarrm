@@ -1,5 +1,6 @@
 //! End-to-end HTTP pipeline regressions for routing, virtual libraries, and web clients.
 use super::*;
+use crate::http_tests::support::received_without_bookkeeping;
 mod media_paths;
 mod regressions;
 mod virtual_libraries;
@@ -287,10 +288,10 @@ async fn successful_mutations_refresh_cached_user_data_and_live_feeds_always_ref
     let first = catalog(&f, "/Items?Recursive=true").await;
     let id = first["Items"][0]["Id"].as_str().unwrap();
     assert_eq!(first["Items"][0]["UserData"]["Played"], false);
-    let before = f.upstreams[0].received_requests().await.unwrap().len();
+    let before = received_without_bookkeeping(&f.upstreams[0]).await.len();
     assert_eq!(catalog(&f, "/Items?Recursive=true").await, first);
     assert_eq!(
-        f.upstreams[0].received_requests().await.unwrap().len(),
+        received_without_bookkeeping(&f.upstreams[0]).await.len(),
         before
     );
     for upstream in &f.upstreams {
@@ -429,9 +430,9 @@ async fn offline_authorized_sources_retain_sightings_and_recover_without_identit
             .len(),
         2
     );
-    let before = f.upstreams[1].received_requests().await.unwrap().len();
+    let before = received_without_bookkeeping(&f.upstreams[1]).await.len();
     assert_eq!(catalog(&f, &query).await, degraded);
-    assert!(f.upstreams[1].received_requests().await.unwrap().len() > before);
+    assert!(received_without_bookkeeping(&f.upstreams[1]).await.len() > before);
     f.state
         .user_authorization
         .store_authorization_session(
@@ -466,9 +467,9 @@ async fn offline_root_and_search_are_not_cached_and_all_offline_returns_unavaila
     f.state.server_storage.check_servers_health().await;
     for query in ["/Items?Recursive=true", "/Items?SearchTerm=Movie"] {
         let first = catalog(&f, query).await;
-        let before = f.upstreams[0].received_requests().await.unwrap().len();
+        let before = received_without_bookkeeping(&f.upstreams[0]).await.len();
         assert_eq!(catalog(&f, query).await, first);
-        assert!(f.upstreams[0].received_requests().await.unwrap().len() > before);
+        assert!(received_without_bookkeeping(&f.upstreams[0]).await.len() > before);
     }
     f.upstreams[0].reset().await;
     Mock::given(method("GET"))

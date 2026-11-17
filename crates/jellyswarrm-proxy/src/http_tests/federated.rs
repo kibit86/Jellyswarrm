@@ -1,6 +1,7 @@
 //! Route/admin assertions retained at the HTTP boundary.
 use crate::application::catalog::tests::{library_items, setup};
 use crate::auth::service::UserAuthorizationService;
+use crate::http_tests::support::received_without_bookkeeping;
 use axum::extract::State;
 use hyper::StatusCode;
 use serde_json::{json, Value};
@@ -36,10 +37,8 @@ async fn routing_storage_failure_returns_internal_error_without_contacting_a_bac
         );
     }
     for upstream in &fixture.upstreams {
-        assert!(upstream
-            .received_requests()
+        assert!(received_without_bookkeeping(upstream)
             .await
-            .unwrap()
             .iter()
             .all(|request| { !request.url.path().starts_with("/Items/") }));
     }
@@ -79,10 +78,8 @@ async fn post_body_lookup_failure_is_internal_error_but_invalid_selection_is_bad
         assert!(!message.contains("media_mappings"));
     }
     for upstream in &fixture.upstreams {
-        assert!(upstream
-            .received_requests()
+        assert!(received_without_bookkeeping(upstream)
             .await
-            .unwrap()
             .iter()
             .all(|request| request.method != "POST"));
     }
@@ -173,7 +170,7 @@ async fn http_catalog_input_validates_offline_ids_without_initial_backend_select
     ))
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    let online = upstreams[1].received_requests().await.unwrap();
+    let online = received_without_bookkeeping(&upstreams[1]).await;
     let catalog_requests = online
         .iter()
         .filter(|request| request.url.path() == "/Items")
@@ -194,7 +191,7 @@ async fn http_catalog_input_validates_offline_ids_without_initial_backend_select
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        upstreams[1].received_requests().await.unwrap().len(),
+        received_without_bookkeeping(&upstreams[1]).await.len(),
         before
     );
 
@@ -221,14 +218,14 @@ async fn http_catalog_input_validates_offline_ids_without_initial_backend_select
         StatusCode::FORBIDDEN
     );
     assert_eq!(
-        upstreams[1].received_requests().await.unwrap().len(),
+        received_without_bookkeeping(&upstreams[1]).await.len(),
         before
     );
 
     // All unavailable is still 503, including an otherwise federated query.
     upstreams[1].reset().await;
     state.server_storage.check_servers_health().await;
-    let before = upstreams[1].received_requests().await.unwrap().len();
+    let before = received_without_bookkeeping(&upstreams[1]).await.len();
     for uri in [
         "/Items".to_string(),
         format!("/Items?SeriesId={}", facets[1].as_str()),
@@ -236,13 +233,11 @@ async fn http_catalog_input_validates_offline_ids_without_initial_backend_select
         assert_eq!(send(uri).await.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
     assert_eq!(
-        upstreams[1].received_requests().await.unwrap().len(),
+        received_without_bookkeeping(&upstreams[1]).await.len(),
         before
     );
-    assert!(upstreams[0]
-        .received_requests()
+    assert!(received_without_bookkeeping(&upstreams[0])
         .await
-        .unwrap()
         .iter()
         .all(|request| request.url.path() == "/System/Info/Public"));
 }
@@ -347,7 +342,7 @@ async fn admin_library_page_discovers_mapped_users_without_prior_catalog_request
         assign_library, create_group, delete_group, remove_member, rename_group, AssignLibraryForm,
         CreateGroupForm, RemoveMemberForm, RenameGroupForm,
     };
-    let request_count = upstreams[0].received_requests().await.unwrap().len();
+    let request_count = received_without_bookkeeping(&upstreams[0]).await.len();
     let created = create_group(
         State(management.clone()),
         axum::Form(CreateGroupForm {
@@ -413,7 +408,7 @@ async fn admin_library_page_discovers_mapped_users_without_prior_catalog_request
         assert!(!html.contains("id=\"library-discovery-errors\""));
     }
     assert_eq!(
-        upstreams[0].received_requests().await.unwrap().len(),
+        received_without_bookkeeping(&upstreams[0]).await.len(),
         request_count
     );
 

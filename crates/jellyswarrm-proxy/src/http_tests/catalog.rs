@@ -1,6 +1,7 @@
 //! Read contracts derived from useFetchItems, itemdetails, itemsByName and the
 //! legacy ApiClient. Each case pins the backend, credentials, query and DTO shape.
 use super::*;
+use crate::http_tests::support::received_without_bookkeeping;
 use wiremock::{
     matchers::{method, path, query_param},
     Mock, ResponseTemplate,
@@ -174,14 +175,12 @@ async fn read_contract(route: &str, shape: Shape) {
         Shape::Fonts => assert_eq!(result, upstream_body),
     }
     assert!(
-        f.upstreams[1 - owner]
-            .received_requests()
+        received_without_bookkeeping(&f.upstreams[1 - owner])
             .await
-            .unwrap()
             .is_empty(),
         "wrong backend for {route}"
     );
-    let requests = f.upstreams[owner].received_requests().await.unwrap();
+    let requests = received_without_bookkeeping(&f.upstreams[owner]).await;
     assert_eq!(requests.len(), 1, "{route}");
     assert!(requests[0]
         .headers

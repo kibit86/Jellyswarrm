@@ -1,5 +1,6 @@
 //! POST guide federation and recording identities beyond the isolated contracts.
 use super::*;
+use crate::http_tests::support::received_without_bookkeeping;
 use wiremock::{
     matchers::{body_json, method, path},
     Mock, ResponseTemplate,
@@ -53,7 +54,7 @@ async fn posted_unscoped_guide_advances_upstream_body_pages_without_losing_filte
     assert_eq!(result["StartIndex"], 1);
     assert_eq!(result["Items"].as_array().unwrap().len(), 2);
     for upstream in &f.upstreams {
-        assert_eq!(upstream.received_requests().await.unwrap().len(), 2);
+        assert_eq!(received_without_bookkeeping(upstream).await.len(), 2);
     }
     assert_backend_tokens(&f).await;
 }
@@ -87,7 +88,9 @@ async fn posted_guide_body_scope_overrides_conflicting_query_scope() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(f.upstreams[0].received_requests().await.unwrap().is_empty());
+    assert!(received_without_bookkeeping(&f.upstreams[0])
+        .await
+        .is_empty());
 }
 
 #[tokio::test]
@@ -175,13 +178,15 @@ async fn recording_defaults_virtualize_program_and_channel_ids() {
     assert_eq!(result["ChannelId"], f.items[1]);
     assert_eq!(result["PrePaddingSeconds"], 60);
     assert_eq!(result["PostPaddingSeconds"], 120);
-    assert!(f.upstreams[0].received_requests().await.unwrap().is_empty());
+    assert!(received_without_bookkeeping(&f.upstreams[0])
+        .await
+        .is_empty());
     assert_backend_tokens(&f).await;
 }
 
 async fn assert_backend_tokens(f: &Fixture) {
     for owner in 0..2 {
-        for request in f.upstreams[owner].received_requests().await.unwrap() {
+        for request in received_without_bookkeeping(&f.upstreams[owner]).await {
             assert!(request
                 .headers
                 .get("authorization")

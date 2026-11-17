@@ -52,7 +52,12 @@ pub(crate) fn annotate_can_manage(value: &mut serde_json::Value, can_manage: boo
     }
 }
 
-const CACHE_TTL: Duration = Duration::from_secs(10 * 60);
+/// How long an administrator flag is believed. Long on purpose: native apps keep a
+/// session for days and read the flag on every screen. A stale `true` is harmless,
+/// since the backend itself refuses what its account may not do.
+const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+/// One background lookup per viewer and server at a time.
+const REFRESH_GUARD: Duration = Duration::from_secs(20);
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How a client request relates to backend administration.
@@ -160,6 +165,12 @@ struct BackendPolicy {
 /// the next request tries again.
 pub(crate) struct AdminRights {
     cache: Cache<String, bool>,
+    /// Lookups started recently, by `token@server`: no pile-up while one runs.
+    refreshing: Cache<String, ()>,
+    /// Whether an unknown viewer is looked up in the background. On in production; off
+    /// in the test harness, so that tests counting backend requests do not depend on
+    /// when a background task runs (a test that needs it turns it on).
+    background_refresh: std::sync::atomic::AtomicBool,
 }
 
 impl Default for AdminRights {
@@ -175,6 +186,51 @@ impl AdminRights {
                 .time_to_live(CACHE_TTL)
                 .max_capacity(4096)
                 .build(),
+            refreshing: Cache::builder()
+                .time_to_live(REFRESH_GUARD)
+                .max_capacity(4096)
+                .build(),
+            background_refresh: std::sync::atomic::AtomicBool::new(!cfg!(test)),
+        }
+    }
+
+    pub(crate) fn background_refresh_enabled(&self) -> bool {
+        self.background_refresh
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// For the test that exercises the background lookup itself.
+    #[cfg(test)]
+    pub(crate) fn enable_background_refresh(&self) {
+        self.background_refresh
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Fill the cache for the proxy user behind `token` on `server`: the backend
+    /// is asked about every session of that user there that is not known yet.
+    /// Called from a background task; never blocks a response.
+    pub(crate) async fn refresh_for_token(
+        &self,
+        client: &reqwest::Client,
+        users: &UserAuthorizationService,
+        token: &str,
+        server: &Server,
+    ) {
+        let key = format!("{token}@{}", server.id);
+        if self.refreshing.contains_key(&key) {
+            return;
+        }
+        self.refreshing.insert(key, ()).await;
+        let Ok(Some(user)) = users.get_user_by_token(token).await else {
+            return;
+        };
+        let Ok(sessions) = users.get_user_sessions(&user.id, None).await else {
+            return;
+        };
+        for (session, session_server) in sessions.iter().filter(|(_, s)| s.id == server.id) {
+            if self.cache.get(&session.jellyfin_token).await.is_none() {
+                self.is_administrator(client, session, session_server).await;
+            }
         }
     }
 
