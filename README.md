@@ -26,6 +26,13 @@ JellyProxy-NG is a reverse proxy that lets you combine multiple Jellyfin servers
   <img src="./media/library.png" alt="Library" width="90%">
 </p>
 
+<p align="center">
+  <!-- Side-by-side smaller views, same height -->
+  <img src="./media/my_servers.png" alt="My servers: connect an account on each server, open or administer it" height="250px" style="margin-right:10px;">
+  <img src="./media/servers.png" alt="Server management" height="250px" style="margin-right:10px;">
+  <img src="./media/users.png" alt="Users and their server mappings" height="250px">
+</p>
+
 ## Features
 
 > [!WARNING]

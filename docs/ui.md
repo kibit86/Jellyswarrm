@@ -18,6 +18,10 @@ later does nothing; it only matters again if the database is deleted. The admini
 
 ## Adding servers (Servers, administrator)
 
+<p align="center">
+  <img src="../media/servers.png" alt="Server management" width="90%">
+</p>
+
 1. Open the **Servers** section.
 2. Fill in the details:
    - **Server Name** – A friendly display name for the server.
@@ -33,7 +37,7 @@ Servers can also be listed in the configuration file (`preconfigured_servers`, s
 ## My servers
 
 <p align="center">
-  <img src="./images/add_mapping.png" alt="Server mappings" width="90%">
+  <img src="../media/my_servers.png" alt="My servers" width="90%">
 </p>
 
 The administrator lands here after signing in; other users find it under **Servers**. The page lists the servers the user is
@@ -57,6 +61,10 @@ A user who is not the administrator never sees **Open** or **Set up**, and sees 
 account administers the server.
 
 ## Users (administrator)
+
+<p align="center">
+  <img src="./images/add_mapping.png" alt="A user with a server mapping, and the form to add another" width="90%">
+</p>
 
 Other users are optional; the administrator alone is enough for one person or one household using a single login.
 
