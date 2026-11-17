@@ -9,8 +9,8 @@
 <img alt="Logo Banner" src="./media/banner.svg"/>
 <br/>
 <br/>
-<a href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.html">
-<img alt="MIT License" src="https://img.shields.io/badge/License-GPL_v2-blue.svg"/>
+<a href="#license">
+<img alt="License: GPL v2 (repository), MIT or Apache-2.0 (Rust crates)" src="https://img.shields.io/badge/License-GPL_v2-blue.svg"/>
 </a>
 <a href="https://github.com/kibit86/jellyproxy-ng/releases">
 <img alt="Current Release" src="https://img.shields.io/github/release/kibit86/jellyproxy-ng.svg"/>
@@ -26,13 +26,6 @@ JellyProxy-NG is a reverse proxy that lets you combine multiple Jellyfin servers
   <img src="./media/library.png" alt="Library" width="90%">
 </p>
 
-<p align="center">
-  <!-- Side-by-side smaller views, same height -->
-  <img src="./media/servers.png" alt="Server Selection" height="250px" style="margin-right:10px;">
-  <img src="./media/users.png" alt="User Mappings" height="250px" style="margin-right:10px;">
-  <img src="./media/user_page.png" alt="Settings" height="250px">
-</p>
-
 ## Features
 
 > [!WARNING]
@@ -41,18 +34,20 @@ JellyProxy-NG is a reverse proxy that lets you combine multiple Jellyfin servers
 ### ✅ Working
 
 * **Unified Library Access** – Browse media from multiple Jellyfin servers in one place.
-* **Direct Playback** – Play content straight from the original server without extra overhead.
+* **Direct or Proxied Playback** – Per server: `Redirect` sends the client straight to the original server, `Proxy` relays the media through JellyProxy-NG (needed when clients cannot reach that server). Transcoding always happens on the server that owns the media.
 * **User Mapping** – Link accounts across servers for a consistent user experience.
 * **API Compatibility** – Appears as a normal Jellyfin server, so existing apps and tools still work.
-* **Server Federation** – Automatically sync users across connected servers.
-* **User Page** – Personal dashboard for managing credentials and libraries. 
+* **My servers, Media and Profile** – Each user connects their own account on every server (password or Quick Connect), browses their media and changes their password.
 * **QuickConnect** – Sign in on one device by approving the code from another authenticated device.
 * **Websocket Support** – Needed for real-time features like SyncPlay 
 * **One Account, Mapped Per Server** *(this fork)* – A single proxy administrator; for each server you choose the account to use there. No accounts are created from backend logins.
 * **Server Panels** *(this fork)* – Open a server's own web client and dashboard already signed in with the mapped account, or run the first-time setup of a new server, through the proxy ([details](docs/administration.md)).
-* **Per-Server Item Management** *(this fork)* – Edit, refresh and delete items only where the mapped account is an administrator.
+* **Per-Server Item Management** *(this fork)* – Edit, refresh and delete items only where the mapped account is an administrator and Jellyfin allows it. Native apps that read the "can delete" flag (for example Android TV) offer **Delete** too (since 1.3.0); see [docs/administration.md](docs/administration.md).
 * **Network Discovery** *(this fork)* – Jellyfin apps on the LAN find the proxy automatically (UDP 7359); can be switched off.
 
+
+### 🚫 Not in this fork
+* **Server Federation** – Upstream can create a user on every connected server and sync accounts. Here it is switched off and hidden: accounts are mapped explicitly, and nothing is created on a backend. (`auto_create_users_on_login` is off by default.)
 
 ### ⚠️ In Progress
 * **Automatic Bitrate Adjustment** – Stream quality based on network conditions isn’t supported yet.
@@ -67,9 +62,9 @@ Here’s a minimal `docker-compose.yml` example to get started:
 
 ```yaml
 services:
-  jellyswarrm:
-    image: ghcr.io/llukas22/jellyswarrm:latest
-    container_name: jellyswarrm
+  jellyproxy-ng:
+    image: ghcr.io/kibit86/jellyproxy-ng:1.3.0   # pin an exact version, see "Image tags" below
+    container_name: jellyproxy-ng
     restart: unless-stopped
     ports:
       - 3000:3000
@@ -77,20 +72,52 @@ services:
       - ./data:/app/data
     environment:
       - JELLYSWARRM_USERNAME=admin
-      - JELLYSWARRM_PASSWORD=jellyswarrm # ⚠️ Change this in production!
+      - JELLYSWARRM_PASSWORD=change-me # ⚠️ Change this in production!
 ```
 
-Once the container is running, open:
+> The program and its settings keep the upstream names on purpose (`JELLYSWARRM_*`, `jellyswarrm.toml`, `jellyswarrm.db`).
+> Only variables whose name is a single word work as environment variables; everything else is set in
+> `jellyswarrm.toml` or in the **Settings** page. See [docs/config.md](docs/config.md).
 
-* **Web UI (setup & management):** `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`
-  – Log in with the username and password you set in the environment variables.
-  – From here, you can add your Jellyfin servers and configure user mappings.
+**LAN discovery.** Jellyfin apps find servers with a UDP broadcast on port 7359. Docker's default bridge network does
+not forward broadcasts, so for discovery run the container with `network_mode: host` (then `ports:` is not used;
+set the port with `JELLYSWARRM_PORT`, default 3000). Only one server per host may own UDP 7359.
 
-* **Bundled Jellyfin Web Client:** `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]`
+### First start
 
-For advanced configuration options, check out the [ui](./docs/ui.md) and [configuration](./docs/config.md) documentation.
+1. Open **`http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`** and sign in with `JELLYSWARRM_USERNAME` /
+   `JELLYSWARRM_PASSWORD`. These create the **one proxy administrator** the first time the program starts. After that the
+   password lives in the database: change it from **Profile**; changing the environment variable does nothing.
+2. **Servers** → add your Jellyfin servers.
+3. **My servers** → **Connect** on each server with the account you want to use *there* (password or Quick Connect;
+   the names and passwords may differ). **Open**, **Set up** (a server never configured) and **Administer**
+   open the server's own page through the proxy, in a new tab, already signed in.
+4. Point your Jellyfin apps at the proxy and sign in with the proxy account.
+   The bundled web client is at `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]`.
+
+Other users are optional (**Users**): each gets their own mapped accounts, see [docs/administration.md](docs/administration.md).
+
+### Image tags
+
+| Tag | Meaning |
+|---|---|
+| `X.Y.Z` | One release. **Use this**, and update it deliberately. |
+| `X.Y`, `X` | Latest release of that minor / major. |
+| `latest` | Latest release. |
+| `edge`, `sha-…` | Snapshots of `main`. Not for deployment. |
+
+A database migration cannot be undone: an image that has migrated a database cannot be rolled back without restoring
+the data first. For advanced configuration options, check out the [ui](./docs/ui.md) and
+[configuration](./docs/config.md) documentation.
 
 For `/health`, `/ready`, and Docker health check details, see the [health monitoring documentation](./docs/health-monitoring.md).
+
+## Contributing and releases
+
+Everything reaches `main` through a pull request whose checks (format, clippy, tests, advisories, a Docker integration
+test and a browser test) pass; merging builds the image, and raising the version in `Cargo.toml` makes it a release
+(tag, GitHub Release and the `X.Y.Z` images are created by the pipeline). How it works, how the tests are organised and
+what to review before a push is in [`CLAUDE.md`](CLAUDE.md) and [docs/releasing.md](docs/releasing.md).
 
 ---
 
@@ -192,4 +219,10 @@ Jellyfin servers and media.
    Most likely! JellyProxy-NG presents itself as a standard Jellyfin server, so most clients should work out of the box. That said, not every Jellyfin client has been tested, so a few may have issues.  
 
 3. **Why use JellyProxy-NG instead of mounting a remote library via e.g. SMB?**  
-   JellyProxy-NG is built to **connect your servers with your friends’ servers** across different networks. Setting up SMB in these cases can be complicated, and performance is often worse. With JellyProxy-NG, content is streamed directly from the original server, so all the heavy lifting (like transcoding) happens where the media actually lives.
+   JellyProxy-NG is built to **connect your servers with your friends’ servers** across different networks. Setting up SMB in these cases can be complicated, and performance is often worse. With JellyProxy-NG, the heavy lifting (like transcoding) happens where the media actually lives; in `Redirect` mode the client even streams straight from that server, in `Proxy` mode the media passes through JellyProxy-NG.
+
+## License
+
+The repository is licensed under the GNU GPL v2 (see [LICENSE](LICENSE)). The Rust crates under `crates/` are
+`MIT OR Apache-2.0` (see the `LICENSE-MIT` / `LICENSE-APACHE` files in each crate). The bundled web client is
+[jellyfin-web](https://github.com/jellyfin/jellyfin-web) (GPL v2) with the patch in `patches/`.

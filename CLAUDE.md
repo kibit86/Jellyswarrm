@@ -143,7 +143,7 @@ The last three are slow and are the ones that break unnoticed, because they live
 | You changed | Review (grep for it) |
 |---|---|
 | A UI template: ids, classes, `hx-*`, form fields, the default page of a role | `tests/browser/*.rs` selectors (`grep -n 'locator\|wait_for_function\|hx-' tests/browser`), `dev/e2e-fresh-install/browser_e2e.py` |
-| A config default or a config key (`auto_create_users_on_login`, admin `username`/`password`, ports, discovery) | `write_proxy_config` in `tests/server_integration.rs`, `data/jellyswarrm.dev.toml`, `dev/README.md`, `docs/config.md` |
+| A config default or a config key (`auto_create_users_on_login`, admin `username`/`password`, ports, discovery) | `write_proxy_config` in `tests/server_integration.rs`, `data/jellyswarrm.dev.toml`, `dev/README.md`, `docs/config.md` (only single-word keys can be set from the environment: say so, and keep the table's Environment column true) |
 | Who can log in, admin bootstrap, mapped accounts, admin rights | `tests/server_integration.rs` (logins, `IsAdministrator`), `tests/browser/login.rs` and `server_mapping.rs`, `http_tests/access.rs`, `admin_rights.rs` |
 | A route, a header, the pass-through | `http_tests/` (the matching file), `node scripts/scan-client-routes.cjs --check` |
 | A migration | tests that open a database; remember rule 6 above |

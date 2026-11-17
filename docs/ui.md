@@ -1,123 +1,101 @@
 # JellyProxy-NG UI Documentation
 
-## Admin Interface Overview
+The management UI is at `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`. What you see depends on who signs in:
 
-The Admin Interface is displayed when you log in with an administrator account. It provides tools to manage connected Jellyfin servers, user accounts, and global settings for your JellyProxy-NG instance.
+| | Menu |
+|---|---|
+| **Proxy administrator** | My servers · Servers · Users · Libraries · Settings · Profile |
+| **Other users** | Servers (their own connections) · Media · Profile |
 
-### Adding Servers  
+The account model behind it, and how the server panels and item management work, is in
+[administration.md](administration.md).
+
+## Signing in the first time
+
+The proxy creates its **one administrator** when it starts for the first time, from `JELLYSWARRM_USERNAME` and
+`JELLYSWARRM_PASSWORD`. From then on the password is in the database: change it from **Profile**. Changing the variable
+later does nothing; it only matters again if the database is deleted. The administrator cannot be deleted.
+
+## Adding servers (Servers, administrator)
+
+1. Open the **Servers** section.
+2. Fill in the details:
+   - **Server Name** – A friendly display name for the server.
+   - **Jellyfin URL** – The full URL to your Jellyfin server (e.g. `http://jellyfin.example.com`). It is also stored in
+     the mappings and sessions: to change it later, remove the server and add it again (mappings are redone).
+   - **Priority** – Determines which server takes precedence for tasks not handled by the proxy (such as theming/styling). Higher numbers = higher priority.
+   - **Streaming** – Choose `Redirect` when clients can reach that Jellyfin server directly, or `Proxy` when the stream must pass through JellyProxy-NG.
+3. Click **Add**.
+
+You can change the streaming mode of an existing server from the server list. To remove a server, click **Delete**.
+Servers can also be listed in the configuration file (`preconfigured_servers`, see [config.md](config.md)).
+
+## My servers
 
 <p align="center">
-  <img src="./images/servers.png" alt="Servers" width="90%">
-</p>  
-
-To connect your Jellyfin servers to JellyProxy-NG, follow these steps:  
-
-1. Open the JellyProxy-NG Web UI in your browser:  
-   `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`  
-
-2. Log in with the username and password you set in the environment variables during deployment.  
-
-3. Go to the **Servers** section.  
-
-4. Fill in the required details:  
-   - **Server Name** – A friendly display name for the server.  
-   - **Jellyfin URL** – The full URL to your Jellyfin server (e.g. `http://jellyfin.example.com`).  
-   - **Priority** – Determines which server takes precedence for tasks not handled by the proxy (such as theming/styling). Higher numbers = higher priority.  
-   - **Streaming** – Choose `Redirect` when clients can reach that Jellyfin server directly, or `Proxy` when the stream must pass through JellyProxy-NG.  
-
-5. Click **Add** to save the server.  
-
-You can change the streaming mode for an existing server directly from the server list. To remove a server, simply click the **Delete** button next to the one you want to remove.  
-
-#### Federarated Servers
-
-<p align="center">
-  <img src="./images/federated.png" alt="Add User with Federation" width="90%">
+  <img src="./images/add_mapping.png" alt="Server mappings" width="90%">
 </p>
 
+The administrator lands here after signing in; other users find it under **Servers**. The page lists the servers the user is
+connected to, and the available ones.
 
-After you add a server, you can optionally provide admin credentials. This allows JellyProxy-NG to create and manage user accounts on that server automatically when using the federation features. Simply press the admin icon next to the server entry and enter the admin username and password for that Jellyfin instance.
+- **Connect** – link the account you use *on that server*. Choose **Password** (name and password of the Jellyfin account
+  there, which may differ from your proxy login) or **Quick Connect**: a code to approve in an already signed-in Jellyfin
+  client on that *backend* server, where Quick Connect must be enabled. The code is temporary; the proxy saves the
+  resulting backend access token for future logins. If the token is revoked, choose **Reconnect** and sign in again.
+  Jellyfin does not provide a refresh token for this flow. The credentials are checked on the server before the mapping is
+  saved. Apps already signed in to the proxy may need to sign in again to pick up a newly linked server.
+- **Disconnect** – remove the link.
+- **Open**, **Set up**, **Administer** (administrator only, each opens in a **new tab**, signed in through the proxy):
+  - **Open** – the server's own web client, on a server with no mapped account yet: sign in there yourself.
+  - **Set up** – the same, for a server that was never configured: its first-run wizard opens through the proxy, so you can
+    create its first account.
+  - **Administer** – appears on a connected server where the mapped account is a Jellyfin administrator: opens that server's
+    dashboard already signed in, with no second login.
 
+A user who is not the administrator never sees **Open** or **Set up**, and sees **Administer** only where their own mapped
+account administers the server.
 
+## Users (administrator)
 
-### User Management & Federation
+Other users are optional; the administrator alone is enough for one person or one household using a single login.
 
-JellyProxy-NG allows you to link users across multiple Jellyfin servers into a single unified account. This way, users can log in once and access media from all their connected servers seamlessly.
+- **Add User** – a username and a password for the proxy. Nothing is created on any Jellyfin server.
+- **Server mappings** – for each user, which account to use on each server: choose the server, enter the **username** and
+  **password** of the Jellyfin account there, **Add**. Under each mapping the card shows the server, the mapped user, the
+  authentication method and **Sessions**: the number of backend sessions the proxy keeps open for it.
+- **Reset Sessions** – closes those sessions; the next use signs in again with the saved credentials. Use it after fixing
+  or recreating an account on a server.
+- **Delete** a mapping to unlink one server, or **Delete User** to remove the user with its mappings and sessions. Neither
+  touches a Jellyfin server.
+- If `auto_create_users_on_login` is on (it is **off by default**), a login with an account that exists on a connected server
+  creates a proxy user and its mappings. Leave it off unless you want that.
 
----
+Mapping credentials and backend tokens in per-client authorization sessions are encrypted using separate purpose-specific
+keys derived from the persistent `session_key` in `jellyswarrm.toml`, not from any user password, so changing a password
+never invalidates them. Back up that configuration file together with the database: losing or changing `session_key` makes
+encrypted mappings and sessions unreadable. New local user passwords are stored with salted Argon2id hashes. The initial
+administrator password given in the environment is also kept in the configuration file: protect it (files written by the
+proxy are owner-only on Unix).
 
-### Adding Users
+Login-time migration also supports legacy mappings from older versions. Before changing a local password, the proxy validates
+any remaining ambiguous legacy mappings directly with their servers; if validation fails the password stays unchanged and the
+UI asks you to check connectivity or reconnect the affected accounts from **My servers**, then retry.
 
-#### Federation (Recommended)
-When creating a new user in JellyProxy-NG via the Admin UI, you can check the **Enable Federation** option.
-
-<p align="center">
-  <img src="./images/add_user.png" alt="Add User with Federation" width="90%">
-</p>
-
-This will automatically:
-1. Create the user on all connected Jellyfin servers (requires Admin credentials to be configured for those servers).
-2. Set the same password for all of them.
-3. Automatically create the server mappings in JellyProxy-NG.
-
-This ensures that the user exists everywhere and is ready to use immediately without manual configuration.
-
-#### Automatic Mapping (Login)
-If `auto_create_users_on_login` is enabled, users who already exist on one or more connected servers can log in directly with their existing Jellyfin credentials. JellyProxy-NG will automatically create a local user and set up the necessary server mappings.
-
-If the same username and password exist on multiple servers, JellyProxy-NG will link those accounts together automatically (only while this setting is enabled). This provides a smooth experience, giving the user unified access to all linked servers.
-
-#### Manual Creation
-To manually create a user in JellyProxy-NG without federation:
-
-1. Open the JellyProxy-NG Web UI in your browser:
-   `http://[JELLYSWARRM_HOST]:[JELLYSWARRM_PORT]/ui`
-2. Log in with the admin credentials you set during deployment.
-3. Navigate to the **Users** section.
-4. Define a **username** and **password** for the new user.
-5. Uncheck **Enable Federation** if you only want to create the user locally in JellyProxy-NG.
-6. Click **Add** to create the user.
-
----
-
-### Adding Server Mappings to a User
-
-<p align="center">
-  <img src="./images/add_mapping.png" alt="Add Mapping" width="90%">
-</p>
-
-To manually link a user to additional server accounts (e.g. if they have different passwords or usernames on different servers):
-
-1. In the **Users** section, find the user you want to extend with server mappings.
-2. If the user does not yet have a mapping for a server, a dropdown menu will appear under their entry.
-3. Select the target server from the dropdown.
-4. Enter the **username** and **password** for the Jellyfin account on that server.
-5. Click **Add** to save the mapping.
-
-Users can also link their own accounts from **Connected Servers** in the JellyProxy-NG UI. For an available server, choose **Connect**, then select **Password** or **Quick Connect** in the dialog. Quick Connect displays a code to approve in an already signed-in Jellyfin client on that *backend* server, where Quick Connect must be enabled. The code is temporary; JellyProxy-NG saves the resulting backend access token for future logins. If the token is revoked, choose **Reconnect** on the connected server and select either sign-in method. Expired codes or connection errors can be retried from the dialog. Jellyfin does not provide a refresh token for this flow. Existing Jellyfin app sessions may need to sign in to JellyProxy-NG again to pick up a newly linked server.
-
-Mapping credentials and backend tokens in per-client authorization sessions are encrypted using separate purpose-specific keys derived from the persistent `session_key` in `jellyswarrm.toml`. Back up that configuration file together with the database: losing or changing `session_key` makes encrypted mappings and sessions unreadable. Existing session tokens are encrypted on startup; existing mappings are upgraded when they can be decrypted, or after successful backend authentication if a legacy plaintext password resembles encrypted data. New local user passwords are stored with salted Argon2id hashes. Existing SHA-256 login hashes are upgraded after a successful login, once their legacy mappings have been safely re-encrypted. The admin password is still held in the administrator's configuration: protect that file and check permissions on existing installations (newly saved files use owner-only permissions on Unix).
-
-Login-time migration also supports legacy mappings encrypted with the original raw password. Password hashing and verification run on blocking workers with bounded concurrency. Before changing a local password, JellyProxy-NG validates any remaining ambiguous legacy password mappings directly with their backend servers. If validation fails, the local password stays unchanged and the UI asks you to check server connectivity or reconnect the affected accounts from **Connected Servers**, then retry.
-
----
-
-### Removing Users or Mappings
-
-To remove a user or unlink a specific server mapping, simply press the **Delete** button next to the entry you want to remove.
-
-When deleting a user, you can optionally choose to **Delete from all servers**, which will attempt to remove the user account from all connected Jellyfin instances where the admin has access.  
-
-
-## Global Settings  
+## Settings (administrator)
 
 <p align="center">
   <img src="./images/settings.png" alt="Settings" width="90%">
-</p>  
+</p>
 
-The **Settings** section lets you configure global options that affect how JellyProxy-NG appears to your users and clients:  
+The **Settings** section changes global options at runtime; edits persist to the TOML file (**Save**, **Reset**, **Reload
+From Disk**):
 
-- **Public Address** – The external address reported to Jellyfin clients.  
-- **Server Name** – The display name shown to users when they log in.  
-- **Add Server Name to Title** – When enabled, JellyProxy-NG will append the server name to media titles in the format:  
-  `Title [Server Name]`.  
+- **Server ID** – read-only.
+- **Public Address** – The external address reported to Jellyfin clients and announced by LAN discovery.
+- **Server Name** – The display name shown to users when they log in.
+- **Add Server Names to Media** – When enabled, the server name is appended to media titles: `Title [Server Name]`.
+- **Auto Create Users On Login** – see **Users** above.
+- **Merge Duplicate Movies & Shows Across Servers** – one item for the same title on several servers, with the copies as versions.
+- **Answer Network Discovery (UDP 7359)** – let Jellyfin apps on the LAN find the proxy. Applies without a restart. Only one
+  server per host may own the port (and a Docker bridge network does not forward the broadcast: use host networking).
